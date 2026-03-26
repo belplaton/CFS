@@ -70,7 +70,7 @@ CFS — это распределённая система для хранени
 
 1. Клонируйте репозиторий:
 ```bash
-git clone https://github.com/your-org/CFS.git
+git clone https://github.com/belplaton/CFS.git
 cd CFS
 ```
 
