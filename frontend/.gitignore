@@ -1,0 +1,55 @@
+# .NET
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.suo.user
+*.userosscache.user
+
+# Rider
+.idea/
+
+# Build artifacts
+*.dll
+*.exe
+*.pdb
+*.exe.meta
+*.dll.meta
+*.so
+*.dylib
+
+# Test results
+TestResults/
+*.trx
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+
+# wwwroot (для BFF - генерируется при сборке)
+wwwroot/
+
+# Node modules (если будут использоваться)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
