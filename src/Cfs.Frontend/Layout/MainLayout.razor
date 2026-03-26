@@ -1,0 +1,37 @@
+@inherits LayoutComponentBase
+@inject SessionState SessionState
+
+<div class="page-shell">
+    <aside class="sidebar-shell">
+        <NavMenu />
+    </aside>
+
+    <main class="main-shell">
+        <header class="top-row">
+            <div>
+                <p class="stack-label">Cloud File Storage</p>
+                <h2>Frontend + BFF starter</h2>
+            </div>
+
+            <div class="top-row-actions">
+                <span class="status-pill">Mock network slice</span>
+
+                @if (SessionState.IsAuthenticated && SessionState.User is not null)
+                {
+                    <div class="user-chip">
+                        <span class="user-chip-label">Signed in</span>
+                        <strong>@SessionState.User.DisplayName</strong>
+                    </div>
+                }
+                else
+                {
+                    <a class="ghost-link" href="login">Open login</a>
+                }
+            </div>
+        </header>
+
+        <article class="content-shell">
+            @Body
+        </article>
+    </main>
+</div>

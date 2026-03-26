@@ -1,0 +1,89 @@
+@page "/login"
+@inject CfsApiClient ApiClient
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+
+<PageTitle>Login</PageTitle>
+
+<section class="login-grid">
+    <div class="surface-card">
+        <p class="stack-label">Mock auth</p>
+        <h1>Mint a local session</h1>
+        <p class="hero-copy">
+            This is intentionally thin. It gives the frontend a realistic bearer-token flow while
+            the real auth service is still under construction.
+        </p>
+
+        <EditForm Model="_model" OnValidSubmit="HandleSubmitAsync">
+            <DataAnnotationsValidator />
+
+            <div class="field-stack">
+                <div>
+                    <label class="field-label" for="email">Email</label>
+                    <InputText id="email" class="text-field" @bind-Value="_model.Email" />
+                    <ValidationMessage For="@(() => _model.Email)" />
+                </div>
+
+                <div>
+                    <label class="field-label" for="password">Password</label>
+                    <InputText id="password" type="password" class="text-field" @bind-Value="_model.Password" />
+                    <ValidationMessage For="@(() => _model.Password)" />
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <div class="notice notice-danger">@_errorMessage</div>
+            }
+
+            <div class="hero-actions">
+                <button class="primary-button" type="submit" disabled="@_isSubmitting">
+                    @(_isSubmitting ? "Signing in..." : "Sign in")
+                </button>
+
+                @if (SessionState.IsAuthenticated)
+                {
+                    <button class="secondary-button" type="button" @onclick="SessionState.Clear">
+                        Reset active session
+                    </button>
+                }
+            </div>
+        </EditForm>
+    </div>
+
+    <div class="surface-card">
+        <p class="stack-label">Request shape</p>
+        <h2>What the frontend is exercising</h2>
+        <div class="check-grid">
+            <div class="check-item"><code>POST /api/auth/login</code> returns <code>accessToken</code>, <code>expiresAtUtc</code>, and <code>user</code>.</div>
+            <div class="check-item">Protected requests attach <code>Authorization: Bearer ...</code>.</div>
+            <div class="check-item"><code>401</code> clears the local session state immediately.</div>
+        </div>
+    </div>
+</section>
+
+@code {
+    private readonly LoginFormModel _model = new();
+    private bool _isSubmitting;
+    private string? _errorMessage;
+
+    private async Task HandleSubmitAsync()
+    {
+        _isSubmitting = true;
+        _errorMessage = null;
+
+        try
+        {
+            await ApiClient.LoginAsync(new LoginRequest(_model.Email, _model.Password));
+            NavigationManager.NavigateTo("/");
+        }
+        catch (Exception exception)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

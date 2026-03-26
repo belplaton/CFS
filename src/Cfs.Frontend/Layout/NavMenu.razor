@@ -1,0 +1,48 @@
+@inject SessionState SessionState
+
+<div class="nav-shell">
+    <div class="brand-card">
+        <div class="brand-mark">CFS</div>
+        <div>
+            <p class="stack-label">Sprint zero</p>
+            <h1>Frontend / Network</h1>
+        </div>
+    </div>
+
+    <p class="brand-copy">
+        Separate Blazor WebAssembly client talking to an ASP.NET Core BFF.
+        The downstream services are still mocks, but the HTTP shape is already explicit.
+    </p>
+
+    <nav class="nav-links">
+        <NavLink class="nav-link-chip" href="" Match="NavLinkMatch.All">
+            Workspace
+        </NavLink>
+        <NavLink class="nav-link-chip" href="login">
+            Login
+        </NavLink>
+    </nav>
+
+    <div class="nav-surface">
+        <p class="stack-label">Active slice</p>
+        <ul class="nav-list">
+            <li><code>POST /api/auth/login</code></li>
+            <li><code>GET /api/auth/me</code></li>
+            <li><code>GET /api/files/root</code></li>
+            <li><code>POST /api/folders</code></li>
+        </ul>
+    </div>
+
+    <div class="nav-surface nav-surface-accent">
+        <p class="stack-label">Next wave</p>
+        <p class="nav-note">
+            Connect real auth, folder tree, presigned uploads, and share links without
+            rewriting the UI shell.
+        </p>
+
+        @if (SessionState.IsAuthenticated)
+        {
+            <button class="nav-action" @onclick="SessionState.Clear">Reset session</button>
+        }
+    </div>
+</div>

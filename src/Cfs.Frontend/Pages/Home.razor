@@ -1,0 +1,304 @@
+@page "/"
+@implements IDisposable
+@inject CfsApiClient ApiClient
+@inject SessionState SessionState
+
+<PageTitle>CFS Workspace</PageTitle>
+
+<section class="hero-grid">
+    <div class="surface-card surface-hero">
+        <p class="stack-label">Vertical slice</p>
+        <h1>Blazor frontend with an explicit BFF boundary</h1>
+        <p class="hero-copy">
+            This starter already separates the browser client from the network layer.
+            Today the BFF uses in-memory mocks; tomorrow it can proxy real auth, file,
+            and storage services without rebuilding the UI shell.
+        </p>
+
+        <div class="hero-actions">
+            @if (SessionState.IsAuthenticated)
+            {
+                <button class="primary-button" type="button" @onclick="LoadWorkspaceAsync">
+                    Refresh workspace
+                </button>
+            }
+            else
+            {
+                <a class="primary-link" href="login">Open login and mint a mock token</a>
+            }
+
+            <span class="status-pill">BFF status: @(_health?.Status ?? "loading")</span>
+        </div>
+    </div>
+
+    <div class="surface-card">
+        <p class="stack-label">Configured upstreams</p>
+
+        @if (_health is null)
+        {
+            <p class="muted-copy">Reading current BFF health payload...</p>
+        }
+        else
+        {
+            <div class="upstream-list">
+                @foreach (var upstream in _health.Upstreams.OrderBy(pair => pair.Key))
+                {
+                    <div class="upstream-row">
+                        <strong>@upstream.Key</strong>
+                        <span>@upstream.Value</span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(_healthError))
+{
+    <div class="notice notice-danger">@_healthError</div>
+}
+
+@if (SessionState.IsAuthenticated && SessionState.User is not null)
+{
+    <section class="content-grid">
+        <div class="surface-card">
+            <div class="section-heading">
+                <div>
+                    <p class="stack-label">Signed in</p>
+                    <h2>@SessionState.User.DisplayName</h2>
+                </div>
+                <span class="status-pill">Bearer session</span>
+            </div>
+
+            <p class="muted-copy">
+                Current identity: <strong>@SessionState.User.Email</strong>
+            </p>
+
+            <EditForm Model="_createFolderForm" OnValidSubmit="HandleCreateFolderAsync" class="inline-form">
+                <DataAnnotationsValidator />
+
+                <div class="form-grid">
+                    <div>
+                        <label class="field-label" for="folderName">New folder</label>
+                        <InputText id="folderName" class="text-field" @bind-Value="_createFolderForm.Name" />
+                        <ValidationMessage For="@(() => _createFolderForm.Name)" />
+                    </div>
+
+                    <button class="primary-button" type="submit" disabled="@_isCreatingFolder">
+                        @(_isCreatingFolder ? "Creating..." : "Create folder")
+                    </button>
+                </div>
+            </EditForm>
+
+            @if (!string.IsNullOrWhiteSpace(_workspaceError))
+            {
+                <div class="notice notice-danger">@_workspaceError</div>
+            }
+        </div>
+
+        <div class="surface-card">
+            <div class="section-heading">
+                <div>
+                    <p class="stack-label">Root workspace</p>
+                    <h2>@(_workspace?.Path ?? "/")</h2>
+                </div>
+
+                @if (_workspace is not null)
+                {
+                    <span class="status-pill">@_workspace.Items.Count item(s)</span>
+                }
+            </div>
+
+            @if (_isLoadingWorkspace)
+            {
+                <p class="muted-copy">Loading root items from the BFF...</p>
+            }
+            else if (_workspace is null)
+            {
+                <p class="muted-copy">Sign in to load the root file list.</p>
+            }
+            else if (_workspace.Items.Count == 0)
+            {
+                <p class="muted-copy">The root folder is empty.</p>
+            }
+            else
+            {
+                <div class="item-grid">
+                    @foreach (var item in _workspace.Items)
+                    {
+                        <article class="item-card" @key="item.Id">
+                            <div class="item-row">
+                                <span class="item-kind @(item.Kind == BrowserItemKind.Folder ? "item-kind-folder" : "item-kind-file")">
+                                    @GetKindLabel(item.Kind)
+                                </span>
+
+                                @if (item.IsShared)
+                                {
+                                    <span class="mini-pill">shared</span>
+                                }
+                            </div>
+
+                            <h3>@item.Name</h3>
+                            <p class="muted-copy">
+                                @FormatSize(item.SizeBytes) • updated @item.UpdatedAtUtc.ToLocalTime().ToString("dd MMM HH:mm")
+                            </p>
+                        </article>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+}
+else
+{
+    <section class="content-grid">
+        <div class="surface-card">
+            <p class="stack-label">Ready now</p>
+            <h2>What this starter already gives us</h2>
+            <div class="check-grid">
+                <div class="check-item">Separate projects for <code>Frontend</code>, <code>Bff</code>, and <code>Contracts</code>.</div>
+                <div class="check-item">Deterministic local ports and CORS between browser and BFF.</div>
+                <div class="check-item">Shared DTOs for auth and root file browsing.</div>
+                <div class="check-item">A mock session flow so we can build UI before real services land.</div>
+            </div>
+        </div>
+
+        <div class="surface-card">
+            <p class="stack-label">Next implementation steps</p>
+            <h2>Natural follow-up</h2>
+            <div class="check-grid">
+                <div class="check-item">Replace in-memory auth with the real auth-service contract.</div>
+                <div class="check-item">Add folder tree and breadcrumb navigation.</div>
+                <div class="check-item">Introduce upload-init and upload-complete endpoints.</div>
+                <div class="check-item">Persist session in browser storage only after the auth contract is stable.</div>
+            </div>
+        </div>
+    </section>
+}
+
+@code {
+    private ApiHealthResponse? _health;
+    private BrowseRootResponse? _workspace;
+    private readonly CreateFolderFormModel _createFolderForm = new();
+    private bool _isLoadingWorkspace;
+    private bool _isCreatingFolder;
+    private string? _healthError;
+    private string? _workspaceError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        SessionState.Changed += OnSessionChanged;
+
+        await LoadHealthAsync();
+
+        if (SessionState.IsAuthenticated)
+        {
+            await LoadWorkspaceAsync();
+        }
+    }
+
+    private void OnSessionChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            _workspaceError = null;
+
+            if (SessionState.IsAuthenticated)
+            {
+                await LoadWorkspaceAsync();
+            }
+            else
+            {
+                _workspace = null;
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadHealthAsync()
+    {
+        _healthError = null;
+
+        try
+        {
+            _health = await ApiClient.GetHealthAsync();
+        }
+        catch (Exception exception)
+        {
+            _healthError = exception.Message;
+        }
+    }
+
+    private async Task LoadWorkspaceAsync()
+    {
+        if (!SessionState.IsAuthenticated)
+        {
+            return;
+        }
+
+        _isLoadingWorkspace = true;
+        _workspaceError = null;
+
+        try
+        {
+            _workspace = await ApiClient.GetRootAsync();
+        }
+        catch (Exception exception)
+        {
+            _workspaceError = exception.Message;
+        }
+        finally
+        {
+            _isLoadingWorkspace = false;
+        }
+    }
+
+    private async Task HandleCreateFolderAsync()
+    {
+        _isCreatingFolder = true;
+        _workspaceError = null;
+
+        try
+        {
+            _workspace = await ApiClient.CreateFolderAsync(new CreateFolderRequest(_createFolderForm.Name));
+            _createFolderForm.Name = string.Empty;
+        }
+        catch (Exception exception)
+        {
+            _workspaceError = exception.Message;
+        }
+        finally
+        {
+            _isCreatingFolder = false;
+        }
+    }
+
+    private static string GetKindLabel(BrowserItemKind kind) =>
+        kind == BrowserItemKind.Folder ? "Folder" : "File";
+
+    private static string FormatSize(long sizeBytes)
+    {
+        if (sizeBytes <= 0)
+        {
+            return "metadata only";
+        }
+
+        string[] suffixes = ["B", "KB", "MB", "GB"];
+        var size = (double)sizeBytes;
+        var index = 0;
+
+        while (size >= 1024 && index < suffixes.Length - 1)
+        {
+            size /= 1024;
+            index++;
+        }
+
+        return $"{size:0.#} {suffixes[index]}";
+    }
+
+    public void Dispose()
+    {
+        SessionState.Changed -= OnSessionChanged;
+    }
+}
