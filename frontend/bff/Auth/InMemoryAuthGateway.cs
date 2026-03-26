@@ -10,13 +10,8 @@ internal sealed class InMemoryAuthGateway : IAuthGateway
 {
     private readonly ConcurrentDictionary<string, UserSummary> _sessions = new(StringComparer.Ordinal);
 
-    public ValueTask<AuthSessionResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
+    public ValueTask<AuthSessionResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
-        {
-            return ValueTask.FromResult<AuthSessionResponse?>(null);
-        }
-
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         var user = new UserSummary(
             CreateDeterministicUserId(normalizedEmail),
@@ -31,18 +26,18 @@ internal sealed class InMemoryAuthGateway : IAuthGateway
             DateTimeOffset.UtcNow.AddHours(8),
             user);
 
-        return ValueTask.FromResult<AuthSessionResponse?>(session);
+        return ValueTask.FromResult(session);
     }
 
-    public bool TryGetUser(string? accessToken, out UserSummary? user)
+    public ValueTask<UserSummary?> GetCurrentUserAsync(string? accessToken, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(accessToken))
         {
-            user = null;
-            return false;
+            return ValueTask.FromResult<UserSummary?>(null);
         }
 
-        return _sessions.TryGetValue(accessToken, out user);
+        _sessions.TryGetValue(accessToken, out var user);
+        return ValueTask.FromResult(user);
     }
 
     private static Guid CreateDeterministicUserId(string email)

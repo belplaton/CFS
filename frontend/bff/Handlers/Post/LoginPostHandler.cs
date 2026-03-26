@@ -1,4 +1,5 @@
 using Cfs.Bff.Auth;
+using Cfs.Bff.Infrastructure.Http;
 using Cfs.Bff.Infrastructure.Server;
 using Cfs.Contracts.Auth;
 using Cfs.Contracts.Common;
@@ -19,15 +20,22 @@ public sealed class LoginPostHandler(IAuthGateway authGateway) : BffPostHandler
                 "Request body is required.")));
         }
 
-        var session = await authGateway.LoginAsync(request, cancellationToken);
-
-        var result = session is null
-            ? Results.BadRequest(new ApiError(
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        {
+            return new BffHandlerResponse(Results.BadRequest(new ApiError(
                 "auth.invalid_credentials",
-                "Email and password are required."))
-            : Results.Ok(session);
+                "Email and password are required.")));
+        }
 
-        return new BffHandlerResponse(result);
+        try
+        {
+            var session = await authGateway.LoginAsync(request, cancellationToken);
+            return new BffHandlerResponse(Results.Ok(session));
+        }
+        catch (UpstreamApiException exception)
+        {
+            return new BffHandlerResponse(exception.ToResult());
+        }
     }
 
     public override void Initialize(BffServer? server)

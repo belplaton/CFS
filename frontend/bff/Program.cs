@@ -8,6 +8,9 @@ using Cfs.Bff.Infrastructure.Server;
 using Cfs.Bff.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+var backendServicesOptions = builder.Configuration
+    .GetSection(BackendServicesOptions.SectionName)
+    .Get<BackendServicesOptions>() ?? new BackendServicesOptions();
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -37,8 +40,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddSingleton<IAuthGateway, InMemoryAuthGateway>();
-builder.Services.AddSingleton<IWorkspaceGateway, InMemoryWorkspaceGateway>();
+builder.Services.AddBackendGateways(backendServicesOptions);
 
 var app = builder.Build();
 var server = new BffServer(app);

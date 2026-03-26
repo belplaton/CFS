@@ -18,9 +18,10 @@ public sealed class HealthGetHandler(IOptions<BackendServicesOptions> options) :
             DateTimeOffset.UtcNow,
             new Dictionary<string, string>
             {
-                ["auth"] = current.AuthBaseUrl,
-                ["files"] = current.FileBaseUrl,
-                ["storage"] = current.StorageBaseUrl
+                ["mode"] = current.Mode.ToString().ToLowerInvariant(),
+                ["auth"] = DescribeEndpoint(current.Auth.BaseUrl),
+                ["files"] = DescribeEndpoint(current.Files.BaseUrl),
+                ["storage"] = DescribeEndpoint(current.Storage.BaseUrl)
             });
 
         return Task.FromResult(new BffHandlerResponse(Results.Ok(response)));
@@ -29,4 +30,9 @@ public sealed class HealthGetHandler(IOptions<BackendServicesOptions> options) :
     public override void Initialize(BffServer? server)
     {
     }
+
+    private static string DescribeEndpoint(string? baseUrl) =>
+        string.IsNullOrWhiteSpace(baseUrl)
+            ? "not-configured"
+            : baseUrl;
 }
