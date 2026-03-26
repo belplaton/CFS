@@ -4,7 +4,10 @@ namespace Cfs.Bff.Files;
 
 public interface IWorkspaceGateway
 {
-    ValueTask<BrowseRootResponse> GetRootAsync(Guid userId, CancellationToken cancellationToken);
+    ValueTask<BrowseRootResponse> GetRootAsync(string accessToken, CancellationToken cancellationToken);
 
-    ValueTask<BrowseRootResponse> CreateFolderAsync(Guid userId, CreateFolderRequest request, CancellationToken cancellationToken);
+    ValueTask<BrowseRootResponse> CreateFolderAsync(
+        string accessToken,
+        CreateFolderRequest request,
+        CancellationToken cancellationToken);
 }

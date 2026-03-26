@@ -4,7 +4,7 @@ namespace Cfs.Bff.Auth;
 
 public interface IAuthGateway
 {
-    ValueTask<AuthSessionResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken);
+    ValueTask<AuthSessionResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken);
 
-    bool TryGetUser(string? accessToken, out UserSummary? user);
+    ValueTask<UserSummary?> GetCurrentUserAsync(string? accessToken, CancellationToken cancellationToken);
 }

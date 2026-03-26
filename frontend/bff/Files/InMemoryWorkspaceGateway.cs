@@ -1,15 +1,19 @@
 using System.Collections.Concurrent;
+using Cfs.Bff.Infrastructure.Http;
 using Cfs.Contracts.Files;
 
 namespace Cfs.Bff.Files;
 
 internal sealed class InMemoryWorkspaceGateway : IWorkspaceGateway
 {
-    private readonly ConcurrentDictionary<Guid, List<BrowserItemSummary>> _itemsByUser = new();
+    private readonly ConcurrentDictionary<string, List<BrowserItemSummary>> _itemsBySession =
+        new(StringComparer.Ordinal);
 
-    public ValueTask<BrowseRootResponse> GetRootAsync(Guid userId, CancellationToken cancellationToken)
+    public ValueTask<BrowseRootResponse> GetRootAsync(string accessToken, CancellationToken cancellationToken)
     {
-        var items = _itemsByUser.GetOrAdd(userId, static _ => CreateSeedItems());
+        var items = _itemsBySession.GetOrAdd(
+            RequireAccessToken(accessToken),
+            static _ => CreateSeedItems());
 
         lock (items)
         {
@@ -17,14 +21,14 @@ internal sealed class InMemoryWorkspaceGateway : IWorkspaceGateway
         }
     }
 
-    public ValueTask<BrowseRootResponse> CreateFolderAsync(Guid userId, CreateFolderRequest request, CancellationToken cancellationToken)
+    public ValueTask<BrowseRootResponse> CreateFolderAsync(
+        string accessToken,
+        CreateFolderRequest request,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            throw new InvalidOperationException("Folder name is required.");
-        }
-
-        var items = _itemsByUser.GetOrAdd(userId, static _ => CreateSeedItems());
+        var items = _itemsBySession.GetOrAdd(
+            RequireAccessToken(accessToken),
+            static _ => CreateSeedItems());
 
         lock (items)
         {
@@ -35,7 +39,11 @@ internal sealed class InMemoryWorkspaceGateway : IWorkspaceGateway
 
             if (alreadyExists)
             {
-                throw new InvalidOperationException("A folder with this name already exists.");
+                throw new UpstreamApiException(
+                    StatusCodes.Status409Conflict,
+                    "folders.already_exists",
+                    "A folder with this name already exists.",
+                    "files");
             }
 
             items.Add(new BrowserItemSummary(
@@ -48,6 +56,20 @@ internal sealed class InMemoryWorkspaceGateway : IWorkspaceGateway
 
             return ValueTask.FromResult(CreateResponse(items));
         }
+    }
+
+    private static string RequireAccessToken(string? accessToken)
+    {
+        if (!string.IsNullOrWhiteSpace(accessToken))
+        {
+            return accessToken;
+        }
+
+        throw new UpstreamApiException(
+            StatusCodes.Status401Unauthorized,
+            "auth.unauthorized",
+            "Bearer token is required.",
+            "auth");
     }
 
     private static BrowseRootResponse CreateResponse(List<BrowserItemSummary> items)

@@ -1,6 +1,6 @@
-using Cfs.Bff.Auth;
 using Cfs.Bff.Files;
 using Cfs.Bff.Infrastructure;
+using Cfs.Bff.Infrastructure.Http;
 using Cfs.Bff.Infrastructure.Server;
 using Cfs.Contracts.Common;
 using Cfs.Contracts.Files;
@@ -8,14 +8,14 @@ using Cfs.Contracts.Files;
 namespace Cfs.Bff.Handlers.Post;
 
 public sealed class CreateFolderPostHandler(
-    IAuthGateway authGateway,
     IWorkspaceGateway workspaceGateway) : BffPostHandler
 {
     public override string Pattern => "/api/folders";
 
     public override async Task<BffHandlerResponse> HandleRequestAsync(HttpContext context, CancellationToken cancellationToken)
     {
-        if (!authGateway.TryGetUser(context.TryGetBearerToken(), out var user) || user is null)
+        var accessToken = context.TryGetBearerToken();
+        if (string.IsNullOrWhiteSpace(accessToken))
         {
             return new BffHandlerResponse(Results.Unauthorized());
         }
@@ -28,15 +28,21 @@ public sealed class CreateFolderPostHandler(
                 "Request body is required.")));
         }
 
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return new BffHandlerResponse(Results.BadRequest(new ApiError(
+                "folders.invalid_request",
+                "Folder name is required.")));
+        }
+
         try
         {
-            var response = await workspaceGateway.CreateFolderAsync(user.Id, request, cancellationToken);
+            var response = await workspaceGateway.CreateFolderAsync(accessToken, request, cancellationToken);
             return new BffHandlerResponse(Results.Ok(response));
         }
-        catch (InvalidOperationException exception)
+        catch (UpstreamApiException exception)
         {
-            return new BffHandlerResponse(Results.BadRequest(
-                new ApiError("folders.invalid_request", exception.Message)));
+            return new BffHandlerResponse(exception.ToResult());
         }
     }
 
