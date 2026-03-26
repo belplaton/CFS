@@ -6,7 +6,7 @@ public sealed class LoginFormModel
 {
     [Required]
     [EmailAddress]
-    public string Email { get; set; } = "platon@cfs.local";
+    public string Email { get; set; } = "user@cfs.local";
 
     [Required]
     [MinLength(6)]
