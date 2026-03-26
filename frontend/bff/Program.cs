@@ -6,42 +6,18 @@ using Cfs.Bff.Handlers.Post;
 using Cfs.Bff.Infrastructure;
 using Cfs.Bff.Infrastructure.Server;
 using Cfs.Bff.Options;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+var backendServicesOptions = BuildBackendServicesOptions(builder.Configuration);
+var allowedOrigins = ReadAllowedOrigins(builder.Configuration);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
-// Чтение конфигурации BackendServices с поддержкой ENV переменных
-builder.Services.Configure<BackendServicesOptions>(options =>
-{
-    builder.Configuration.GetSection(BackendServicesOptions.SectionName).Bind(options);
-    
-    // Переопределяем из ENV переменных если заданы (для Docker)
-    var authUrl = Environment.GetEnvironmentVariable("AUTH_SERVICE_URL");
-    var fileUrl = Environment.GetEnvironmentVariable("FILE_SERVICE_URL");
-    var storageUrl = Environment.GetEnvironmentVariable("STORAGE_SERVICE_URL");
-    
-    if (!string.IsNullOrWhiteSpace(authUrl))
-        options.AuthBaseUrl = authUrl.TrimEnd('/');
-    if (!string.IsNullOrWhiteSpace(fileUrl))
-        options.FileBaseUrl = fileUrl.TrimEnd('/');
-    if (!string.IsNullOrWhiteSpace(storageUrl))
-        options.StorageBaseUrl = storageUrl.TrimEnd('/');
-});
-
-var allowedOrigins = builder.Configuration
-    .GetSection("Cors:AllowedOrigins")
-    .Get<string[]>() ?? [];
-
-// Поддержка ENV переменной для CORS (для Docker)
-var corsOriginsEnv = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS");
-if (!string.IsNullOrWhiteSpace(corsOriginsEnv))
-{
-    allowedOrigins = corsOriginsEnv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-}
+builder.Services.AddSingleton<IOptions<BackendServicesOptions>>(Options.Create(backendServicesOptions));
 
 builder.Services.AddCors(options =>
 {
@@ -59,42 +35,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Чтение флага использования mock gateway
-var useMockGateways = builder.Configuration.GetValue<bool>("UseMockGateways");
-var useMockGatewaysEnv = Environment.GetEnvironmentVariable("USE_MOCK_GATEWAYS");
-if (!string.IsNullOrWhiteSpace(useMockGatewaysEnv))
-{
-    useMockGateways = bool.Parse(useMockGatewaysEnv);
-}
-
-// Регистрация HttpClient для внешних сервисов
-builder.Services.AddHttpClient("BackendServices", client =>
-{
-    client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-});
-
-if (useMockGateways)
-{
-    builder.Services.AddSingleton<IAuthGateway, InMemoryAuthGateway>();
-    builder.Services.AddSingleton<IWorkspaceGateway, InMemoryWorkspaceGateway>();
-}
-else
-{
-    // Real gateways требуют HttpClient из factory
-    builder.Services.AddSingleton<IAuthGateway>(sp =>
-    {
-        var options = sp.GetRequiredService<IOptions<BackendServicesOptions>>();
-        var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-        return new RealAuthGateway(options, httpClientFactory.CreateClient("BackendServices"));
-    });
-    
-    builder.Services.AddSingleton<IWorkspaceGateway>(sp =>
-    {
-        var options = sp.GetRequiredService<IOptions<BackendServicesOptions>>();
-        var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-        return new RealWorkspaceGateway(options, httpClientFactory.CreateClient("BackendServices"));
-    });
-}
+builder.Services.AddBackendGateways(backendServicesOptions);
 
 var app = builder.Build();
 var server = new BffServer(app);
@@ -114,3 +55,76 @@ server
     .RegisterRequestHandler<BffPostComposer, BffPostHandler, CreateFolderPostHandler>();
 
 app.Run();
+
+static string[] ReadAllowedOrigins(IConfiguration configuration)
+{
+    var configuredOrigins = configuration
+        .GetSection("Cors:AllowedOrigins")
+        .Get<string[]>() ?? [];
+
+    var envOrigins = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS");
+    if (string.IsNullOrWhiteSpace(envOrigins))
+    {
+        return configuredOrigins;
+    }
+
+    return envOrigins.Split(
+        ',',
+        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}
+
+static BackendServicesOptions BuildBackendServicesOptions(IConfiguration configuration)
+{
+    var configuredOptions = configuration
+        .GetSection(BackendServicesOptions.SectionName)
+        .Get<BackendServicesOptions>() ?? new BackendServicesOptions();
+
+    return new BackendServicesOptions
+    {
+        Mode = ReadMode(configuredOptions.Mode),
+        Auth = new AuthServiceOptions
+        {
+            BaseUrl = ReadServiceUrl("AUTH_SERVICE_URL", configuredOptions.Auth.BaseUrl),
+            LoginPath = configuredOptions.Auth.LoginPath,
+            CurrentUserPath = configuredOptions.Auth.CurrentUserPath
+        },
+        Files = new FileServiceOptions
+        {
+            BaseUrl = ReadServiceUrl("FILE_SERVICE_URL", configuredOptions.Files.BaseUrl),
+            RootPath = configuredOptions.Files.RootPath,
+            CreateFolderPath = configuredOptions.Files.CreateFolderPath
+        },
+        Storage = new StorageServiceOptions
+        {
+            BaseUrl = ReadServiceUrl("STORAGE_SERVICE_URL", configuredOptions.Storage.BaseUrl)
+        }
+    };
+}
+
+static BackendServiceMode ReadMode(BackendServiceMode configuredMode)
+{
+    var modeFromEnvironment = Environment.GetEnvironmentVariable("BACKEND_SERVICES_MODE");
+    if (Enum.TryParse<BackendServiceMode>(modeFromEnvironment, true, out var parsedMode))
+    {
+        return parsedMode;
+    }
+
+    var useMockGateways = Environment.GetEnvironmentVariable("USE_MOCK_GATEWAYS");
+    if (bool.TryParse(useMockGateways, out var useMock))
+    {
+        return useMock ? BackendServiceMode.Mock : BackendServiceMode.Remote;
+    }
+
+    return configuredMode;
+}
+
+static string ReadServiceUrl(string environmentVariable, string configuredValue)
+{
+    var fromEnvironment = Environment.GetEnvironmentVariable(environmentVariable);
+    if (string.IsNullOrWhiteSpace(fromEnvironment))
+    {
+        return configuredValue;
+    }
+
+    return fromEnvironment.Trim().TrimEnd('/');
+}

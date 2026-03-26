@@ -11,6 +11,8 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5180/";
 
 builder.Services.AddScoped<SessionState>();
+builder.Services.AddScoped<BrowserSessionStore>();
+builder.Services.AddScoped<SessionCoordinator>();
 builder.Services.AddScoped(_ => new HttpClient
 {
     BaseAddress = new Uri(apiBaseUrl, UriKind.Absolute)

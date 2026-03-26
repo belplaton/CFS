@@ -10,5 +10,5 @@ public sealed class LoginFormModel
 
     [Required]
     [MinLength(6)]
-    public string Password { get; set; } = "frontend-network";
+    public string Password { get; set; } = "demo-password";
 }

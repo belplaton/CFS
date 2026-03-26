@@ -1,6 +1,7 @@
 @page "/"
 @implements IDisposable
 @inject CfsApiClient ApiClient
+@inject NavigationManager NavigationManager
 @inject SessionState SessionState
 
 <PageTitle>CFS Workspace</PageTitle>
@@ -10,9 +11,8 @@
         <p class="stack-label">Vertical slice</p>
         <h1>Blazor frontend with an explicit BFF boundary</h1>
         <p class="hero-copy">
-            This starter already separates the browser client from the network layer.
-            Today the BFF uses in-memory mocks; tomorrow it can proxy real auth, file,
-            and storage services without rebuilding the UI shell.
+            The browser client now restores auth state, validates it against the BFF on startup,
+            and keeps the workspace shell stable when `401` or temporary upstream failures happen.
         </p>
 
         <div class="hero-actions">
@@ -24,7 +24,7 @@
             }
             else
             {
-                <a class="primary-link" href="login">Open login and mint a mock token</a>
+                <a class="primary-link" href="login">Open login and start a session</a>
             }
 
             <span class="status-pill">BFF status: @(_health?.Status ?? "loading")</span>
@@ -140,7 +140,7 @@
 
                             <h3>@item.Name</h3>
                             <p class="muted-copy">
-                                @FormatSize(item.SizeBytes) • updated @item.UpdatedAtUtc.ToLocalTime().ToString("dd MMM HH:mm")
+                                @FormatSize(item.SizeBytes) | updated @item.UpdatedAtUtc.ToLocalTime().ToString("dd MMM HH:mm")
                             </p>
                         </article>
                     }
@@ -159,7 +159,7 @@ else
                 <div class="check-item">Separate projects for <code>Frontend</code>, <code>Bff</code>, and <code>Contracts</code>.</div>
                 <div class="check-item">Deterministic local ports and CORS between browser and BFF.</div>
                 <div class="check-item">Shared DTOs for auth and root file browsing.</div>
-                <div class="check-item">A mock session flow so we can build UI before real services land.</div>
+                <div class="check-item">A persisted browser session with startup validation against <code>GET /api/auth/me</code>.</div>
             </div>
         </div>
 
@@ -167,10 +167,10 @@ else
             <p class="stack-label">Next implementation steps</p>
             <h2>Natural follow-up</h2>
             <div class="check-grid">
-                <div class="check-item">Replace in-memory auth with the real auth-service contract.</div>
+                <div class="check-item">Switch BFF from mock mode to remote mode once backend services are ready.</div>
                 <div class="check-item">Add folder tree and breadcrumb navigation.</div>
                 <div class="check-item">Introduce upload-init and upload-complete endpoints.</div>
-                <div class="check-item">Persist session in browser storage only after the auth contract is stable.</div>
+                <div class="check-item">Add retry affordances and optimistic updates for file operations.</div>
             </div>
         </div>
     </section>
@@ -191,7 +191,7 @@ else
 
         await LoadHealthAsync();
 
-        if (SessionState.IsAuthenticated)
+        if (SessionState.IsReady && SessionState.IsAuthenticated)
         {
             await LoadWorkspaceAsync();
         }
@@ -203,7 +203,7 @@ else
         {
             _workspaceError = null;
 
-            if (SessionState.IsAuthenticated)
+            if (SessionState.IsReady && SessionState.IsAuthenticated)
             {
                 await LoadWorkspaceAsync();
             }
@@ -244,6 +244,15 @@ else
         {
             _workspace = await ApiClient.GetRootAsync();
         }
+        catch (ApiClientException exception) when (exception.IsUnauthorized)
+        {
+            _workspace = null;
+            NavigationManager.NavigateTo("/login");
+        }
+        catch (ApiClientException exception) when (exception.IsServiceUnavailable)
+        {
+            _workspaceError = "Workspace is temporarily unavailable. Try again when the BFF is back.";
+        }
         catch (Exception exception)
         {
             _workspaceError = exception.Message;
@@ -263,6 +272,15 @@ else
         {
             _workspace = await ApiClient.CreateFolderAsync(new CreateFolderRequest(_createFolderForm.Name));
             _createFolderForm.Name = string.Empty;
+        }
+        catch (ApiClientException exception) when (exception.IsUnauthorized)
+        {
+            _workspace = null;
+            NavigationManager.NavigateTo("/login");
+        }
+        catch (ApiClientException exception) when (exception.IsServiceUnavailable)
+        {
+            _workspaceError = "Folder service is temporarily unavailable. Try again later.";
         }
         catch (Exception exception)
         {

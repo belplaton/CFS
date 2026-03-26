@@ -47,6 +47,14 @@
     padding: 0;
 }
 
+.layout-notice {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: -0.25rem;
+}
+
 .ghost-link {
     display: inline-flex;
     align-items: center;
@@ -57,6 +65,10 @@
     color: var(--ink);
     font-weight: 600;
     background: rgba(255, 255, 255, 0.65);
+}
+
+.ghost-button {
+    cursor: pointer;
 }
 
 .user-chip {
@@ -89,5 +101,9 @@
 
     .top-row-actions {
         justify-content: flex-start;
+    }
+
+    .layout-notice {
+        flex-direction: column;
     }
 }

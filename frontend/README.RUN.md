@@ -1,299 +1,90 @@
-# 🚀 Инструкция по запуску CFS Frontend
+# Frontend Runbook
 
-## ✅ Выполненные исправления
+This file documents the current frontend service shape after the `update loo` merge was aligned with the active frontend architecture.
 
-### Критичные проблемы (P0)
-- [x] Создан `Dockerfile` для frontend (multi-stage build: Blazor + BFF)
-- [x] Создан `appsettings.json` для Blazor app с конфигурацией ApiBaseUrl
+## Service Layout
 
-### Средние проблемы (P1)
-- [x] Исправлен CORS в BFF (порт 3000 для Blazor)
-- [x] Добавлено чтение ENV переменных в BFF конфигурацию
-- [x] Создан `RealAuthGateway` для вызова auth-service
-- [x] Создан `RealWorkspaceGateway` для вызова file-service
-- [x] Добавлен флаг переключения mock/real gateway
+- `frontend/app`: Blazor WebAssembly client
+- `frontend/bff`: ASP.NET Core BFF
+- `frontend/contracts`: shared DTOs
 
-### Дополнительные улучшения (P2)
-- [x] Созданы stub-сервисы (Go + Python) для разработки
-- [x] Обновлён `docker-compose.yml`
-- [x] Обновлён `nginx.conf` (порт 5180 для BFF)
+## BFF Gateway Modes
 
----
+The BFF no longer uses `UseMockGateways` inside configuration files.
 
-## 📋 Варианты запуска
+Current source of truth:
 
-### Вариант 1: Полный запуск с Docker Compose (рекомендуется)
-
-**Требования:**
-- Docker Desktop
-- .NET 9.0 SDK (для локальной разработки)
-
-**Запуск:**
-
-1. Создайте `.env` файл:
-```bash
-cp .env.example .env
+```json
+{
+  "BackendServices": {
+    "Mode": "Mock | Remote"
+  }
+}
 ```
 
-2. Установите переменные для stub-сервисов (если нет реальных):
-```bash
-# В .env файле
-USE_MOCK_GATEWAYS=false
-```
+Supported environment overrides:
 
-3. Запустите все сервисы:
-```bash
-docker-compose up -d
-```
+- `BACKEND_SERVICES_MODE=Mock|Remote`
+- `USE_MOCK_GATEWAYS=true|false`
+- `AUTH_SERVICE_URL=http://localhost:8081`
+- `FILE_SERVICE_URL=http://localhost:8082`
+- `STORAGE_SERVICE_URL=http://localhost:8083`
+- `CORS_ALLOWED_ORIGINS=http://localhost:5080,http://localhost:3000`
 
-4. Проверьте статус:
-```bash
-docker-compose ps
-```
+`USE_MOCK_GATEWAYS` is kept only as a compatibility bridge for older local scripts.
 
-5. Откройте браузерер:
-- **Frontend:** http://localhost (через nginx)
-- **BFF Health:** http://localhost:5180/api/health
+## Active Gateway Implementations
 
----
+- `frontend/bff/Auth/InMemoryAuthGateway.cs`
+- `frontend/bff/Auth/RemoteAuthGateway.cs`
+- `frontend/bff/Files/InMemoryWorkspaceGateway.cs`
+- `frontend/bff/Files/RemoteWorkspaceGateway.cs`
 
-### Вариант 2: Локальная разработка со stub-сервисами
+The older `RealAuthGateway` and `RealWorkspaceGateway` files from `update loo` are obsolete and were removed because they target the pre-refactor gateway contracts.
 
-**Шаг 1: Запуск stub-сервисов**
+## Frontend Session Flow
 
-Auth Service Stub (Go):
-```bash
-cd services/auth-service
-go run cmd/stub/main.go
-```
+The browser client now:
 
-File Service Stub (Python):
-```bash
-cd services/file-service
-pip install fastapi uvicorn pydantic
-python stub_main.py
-```
+1. Stores the current session in `localStorage`
+2. Restores it during app bootstrap
+3. Validates it through `GET /api/auth/me`
+4. Clears it on `401`
+5. Shows a non-fatal warning when the BFF is temporarily unavailable
 
-**Шаг 2: Запуск BFF**
+Relevant files:
+
+- `frontend/app/App.razor`
+- `frontend/app/Services/SessionState.cs`
+- `frontend/app/Services/SessionCoordinator.cs`
+- `frontend/app/Services/BrowserSessionStore.cs`
+- `frontend/app/Services/Api/CfsApiClient.cs`
+
+## Local Start
+
+### BFF only
 
 ```bash
 cd frontend/bff
-
-# Установите переменные окружения
-set USE_MOCK_GATEWAYS=false
-set AUTH_SERVICE_URL=http://localhost:8081
-set FILE_SERVICE_URL=http://localhost:8082
-
 dotnet run
 ```
 
-**Шаг 3: Запуск Blazor (опционально для разработки)**
+### Blazor app only
 
 ```bash
 cd frontend/app
 dotnet run
 ```
 
-Откройте: http://localhost:5180 (BFF с Blazor статикой)
+### Full frontend solution
 
----
-
-### Вариант 3: Только mock-сервисы (без stub)
-
-Для быстрой разработки UI без зависимостей:
-
-1. В `frontend/bff/appsettings.json` установите:
-```json
-{
-  "UseMockGateways": true
-}
-```
-
-2. Запустите только BFF:
 ```bash
-cd frontend/bff
-dotnet run
+cd frontend
+dotnet build CFS.sln
 ```
 
-3. Откройте: http://localhost:5180
+## Notes
 
----
-
-## 🔧 Конфигурация
-
-### Переменные окружения BFF
-
-| Переменная | Описание | По умолчанию |
-|------------|----------|--------------|
-| `USE_MOCK_GATEWAYS` | Использовать mock вместо реальных сервисов | `true` |
-| `AUTH_SERVICE_URL` | URL auth-service | `http://localhost:8081` |
-| `FILE_SERVICE_URL` | URL file-service | `http://localhost:8082` |
-| `STORAGE_SERVICE_URL` | URL storage-service | `http://localhost:8083` |
-| `CORS_ALLOWED_ORIGINS` | Разрешённые CORS origin (через запятую) | - |
-
-### appsettings.json (BFF)
-
-```json
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
-    }
-  },
-  "BackendServices": {
-    "AuthBaseUrl": "http://localhost:8081",
-    "FileBaseUrl": "http://localhost:8082",
-    "StorageBaseUrl": "http://localhost:8083"
-  },
-  "Cors": {
-    "AllowedOrigins": [
-      "http://localhost:3000",
-      "http://localhost:5180",
-      "http://localhost:7080"
-    ]
-  },
-  "UseMockGateways": true
-}
-```
-
----
-
-## 🏗 Архитектура
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Nginx (порт 80/443)                    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Frontend Container (порт 5180)                 │
-│  ┌─────────────────┐         ┌─────────────────────────┐    │
-│  │  Blazor WASM    │────────▶│    BFF (ASP.NET Core)   │    │
-│  │  (статика)      │         │  ┌───────────────────┐  │    │
-│  │                 │         │  │ Gateway Pattern   │  │    │
-│  │                 │         │  │ - Mock            │  │    │
-│  │                 │         │  │ - Real (HTTP)     │  │    │
-│  └─────────────────┘         │  └───────────────────┘  │    │
-│                              └─────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              ▼                               ▼
-┌───────────────────────┐         ┌───────────────────────┐
-│   Auth Service        │         │   File Service        │
-│   (Go или Stub)       │         │   (Python или Stub)   │
-│   порт 8081           │         │   порт 8082           │
-└───────────────────────┘         └───────────────────────┘
-```
-
----
-
-## 🧪 Тестирование API
-
-### Health Check
-```bash
-curl http://localhost:5180/api/health
-```
-
-### Login (через BFF)
-```bash
-curl -X POST http://localhost:5180/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"password"}'
-```
-
-### Get Current User
-```bash
-curl http://localhost:5180/api/auth/me \
-  -H "Authorization: Bearer <your-token>"
-```
-
-### Get Root Files
-```bash
-curl http://localhost:5180/api/files/root \
-  -H "Authorization: Bearer <your-token>"
-```
-
-### Create Folder
-```bash
-curl -X POST http://localhost:5180/api/folders \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-token>" \
-  -d '{"name":"New Folder"}'
-```
-
----
-
-## 🐛 Решение проблем
-
-### Ошибка CORS
-**Симптом:** Browser console показывает CORS error
-**Решение:** Проверьте `Cors:AllowedOrigins` в appsettings.json
-
-### BFF не подключается к сервисам
-**Симптом:** 500 Internal Server Error
-**Решение:** 
-1. Проверьте, что сервисы запущены
-2. Проверьте URL в ENV переменных
-3. Установите `UseMockGateways: true` для теста
-
-### Docker build ошибка
-**Симптом:** Ошибка при сборке frontend образа
-**Решение:**
-```bash
-# Очистите кэш Docker
-docker builder prune -a
-
-# Попробуйте собрать заново
-docker-compose build --no-cache frontend
-```
-
----
-
-## 📁 Структура frontend
-
-```
-frontend/
-├── Dockerfile                    # ✅ Multi-stage build
-├── app/
-│   ├── appsettings.json          # ✅ ApiBaseUrl конфигурация
-│   ├── Program.cs
-│   ├── Pages/
-│   │   ├── Home.razor
-│   │   └── Login.razor
-│   ├── Services/
-│   │   ├── CfsApiClient.cs
-│   │   └── SessionState.cs
-│   └── Layout/
-│       ├── MainLayout.razor
-│       └── NavMenu.razor
-│
-├── bff/
-│   ├── Program.cs                # ✅ ENV переменные, флаг mock/real
-│   ├── appsettings.json          # ✅ CORS, BackendServices, UseMockGateways
-│   ├── Auth/
-│   │   ├── IAuthGateway.cs
-│   │   ├── InMemoryAuthGateway.cs
-│   │   └── RealAuthGateway.cs    # ✅ Новый
-│   ├── Files/
-│   │   ├── IWorkspaceGateway.cs
-│   │   ├── InMemoryWorkspaceGateway.cs
-│   │   └── RealWorkspaceGateway.cs  # ✅ Новый
-│   └── Handlers/
-│       └── ...
-│
-└── contracts/
-    └── ...                       # Общие DTO
-```
-
----
-
-## 📞 Следующие шаги
-
-1. **Реализовать auth-service** (Go) с настоящей аутентификацией
-2. **Реализовать file-service** (Python) с базой данных
-3. **Добавить загрузку файлов** через storage-service
-4. **Реализовать дерево папок** с breadcrumb навигацией
-5. **Добавить share links** для общих файлов
+- `frontend/app/wwwroot/appsettings.json` is the runtime client configuration for `ApiBaseUrl`.
+- `frontend/bff/appsettings.Development.json` keeps development mode on `Mock`.
+- `frontend/bff/appsettings.json` describes the remote topology.

@@ -2,16 +2,17 @@
 @inject CfsApiClient ApiClient
 @inject NavigationManager NavigationManager
 @inject SessionState SessionState
+@inject SessionCoordinator SessionCoordinator
 
 <PageTitle>Login</PageTitle>
 
 <section class="login-grid">
     <div class="surface-card">
-        <p class="stack-label">Mock auth</p>
-        <h1>Mint a local session</h1>
+        <p class="stack-label">Frontend auth flow</p>
+        <h1>Start or replace the active session</h1>
         <p class="hero-copy">
-            This is intentionally thin. It gives the frontend a realistic bearer-token flow while
-            the real auth service is still under construction.
+            The browser persists the current session and restores it on reload. This form is only
+            responsible for exchanging credentials with the BFF and replacing the stored token.
         </p>
 
         <EditForm Model="_model" OnValidSubmit="HandleSubmitAsync">
@@ -43,7 +44,7 @@
 
                 @if (SessionState.IsAuthenticated)
                 {
-                    <button class="secondary-button" type="button" @onclick="SessionState.Clear">
+                    <button class="secondary-button" type="button" @onclick="HandleSignOutAsync">
                         Reset active session
                     </button>
                 }
@@ -57,7 +58,8 @@
         <div class="check-grid">
             <div class="check-item"><code>POST /api/auth/login</code> returns <code>accessToken</code>, <code>expiresAtUtc</code>, and <code>user</code>.</div>
             <div class="check-item">Protected requests attach <code>Authorization: Bearer ...</code>.</div>
-            <div class="check-item"><code>401</code> clears the local session state immediately.</div>
+            <div class="check-item"><code>401</code> clears browser storage and pushes the UI back to guest mode.</div>
+            <div class="check-item">A persisted session is validated with <code>GET /api/auth/me</code> during app bootstrap.</div>
         </div>
     </div>
 </section>
@@ -77,6 +79,10 @@
             await ApiClient.LoginAsync(new LoginRequest(_model.Email, _model.Password));
             NavigationManager.NavigateTo("/");
         }
+        catch (ApiClientException exception)
+        {
+            _errorMessage = exception.Message;
+        }
         catch (Exception exception)
         {
             _errorMessage = exception.Message;
@@ -85,5 +91,10 @@
         {
             _isSubmitting = false;
         }
+    }
+
+    private async Task HandleSignOutAsync()
+    {
+        await SessionCoordinator.SignOutAsync();
     }
 }

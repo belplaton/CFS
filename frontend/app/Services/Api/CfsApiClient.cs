@@ -6,10 +6,14 @@ using Cfs.Contracts.Auth;
 using Cfs.Contracts.Common;
 using Cfs.Contracts.Files;
 using Cfs.Contracts.System;
+using Cfs.Frontend.Services;
 
 namespace Cfs.Frontend.Services.Api;
 
-public sealed class CfsApiClient(HttpClient httpClient, SessionState sessionState)
+public sealed class CfsApiClient(
+    HttpClient httpClient,
+    SessionState sessionState,
+    SessionCoordinator sessionCoordinator)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -18,11 +22,13 @@ public sealed class CfsApiClient(HttpClient httpClient, SessionState sessionStat
 
     public async Task<ApiHealthResponse> GetHealthAsync(CancellationToken cancellationToken = default)
     {
-        return await httpClient.GetFromJsonAsync<ApiHealthResponse>(
-                   "api/health",
-                   JsonOptions,
-                   cancellationToken)
-               ?? throw new InvalidOperationException("BFF health endpoint returned an empty response.");
+        using var response = await httpClient.GetAsync("api/health", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        return await ReadRequiredAsync<ApiHealthResponse>(
+            response,
+            "BFF health endpoint returned an empty response.",
+            cancellationToken);
     }
 
     public async Task<AuthSessionResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
@@ -35,12 +41,12 @@ public sealed class CfsApiClient(HttpClient httpClient, SessionState sessionStat
 
         await EnsureSuccessAsync(response, cancellationToken);
 
-        var session = await response.Content.ReadFromJsonAsync<AuthSessionResponse>(
-                          JsonOptions,
-                          cancellationToken)
-                      ?? throw new InvalidOperationException("Login response was empty.");
+        var session = await ReadRequiredAsync<AuthSessionResponse>(
+            response,
+            "Login response was empty.",
+            cancellationToken);
 
-        sessionState.SetSession(session);
+        await sessionCoordinator.SignInAsync(session);
         return session;
     }
 
@@ -51,14 +57,17 @@ public sealed class CfsApiClient(HttpClient httpClient, SessionState sessionStat
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
-            sessionState.Clear();
+            await sessionCoordinator.SignOutAsync(
+                "Saved session expired. Sign in again.",
+                SessionNoticeLevel.Info);
             return null;
         }
 
         await EnsureSuccessAsync(response, cancellationToken);
 
-        return await response.Content.ReadFromJsonAsync<UserSummary>(
-            JsonOptions,
+        return await ReadRequiredAsync<UserSummary>(
+            response,
+            "Current user response was empty.",
             cancellationToken);
     }
 
@@ -69,16 +78,21 @@ public sealed class CfsApiClient(HttpClient httpClient, SessionState sessionStat
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
-            sessionState.Clear();
-            throw new InvalidOperationException("Session expired. Sign in again.");
+            await sessionCoordinator.SignOutAsync(
+                "Session expired. Sign in again.",
+                SessionNoticeLevel.Info);
+            throw new ApiClientException(
+                "Session expired. Sign in again.",
+                System.Net.HttpStatusCode.Unauthorized,
+                "auth.unauthorized");
         }
 
         await EnsureSuccessAsync(response, cancellationToken);
 
-        return await response.Content.ReadFromJsonAsync<BrowseRootResponse>(
-                   JsonOptions,
-                   cancellationToken)
-               ?? throw new InvalidOperationException("Workspace response was empty.");
+        return await ReadRequiredAsync<BrowseRootResponse>(
+            response,
+            "Workspace response was empty.",
+            cancellationToken);
     }
 
     public async Task<BrowseRootResponse> CreateFolderAsync(
@@ -92,23 +106,31 @@ public sealed class CfsApiClient(HttpClient httpClient, SessionState sessionStat
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
-            sessionState.Clear();
-            throw new InvalidOperationException("Session expired. Sign in again.");
+            await sessionCoordinator.SignOutAsync(
+                "Session expired. Sign in again.",
+                SessionNoticeLevel.Info);
+            throw new ApiClientException(
+                "Session expired. Sign in again.",
+                System.Net.HttpStatusCode.Unauthorized,
+                "auth.unauthorized");
         }
 
         await EnsureSuccessAsync(response, cancellationToken);
 
-        return await response.Content.ReadFromJsonAsync<BrowseRootResponse>(
-                   JsonOptions,
-                   cancellationToken)
-               ?? throw new InvalidOperationException("Create folder response was empty.");
+        return await ReadRequiredAsync<BrowseRootResponse>(
+            response,
+            "Create folder response was empty.",
+            cancellationToken);
     }
 
     private HttpRequestMessage CreateAuthorizedRequest(HttpMethod method, string uri)
     {
         if (string.IsNullOrWhiteSpace(sessionState.AccessToken))
         {
-            throw new InvalidOperationException("No active session. Sign in first.");
+            throw new ApiClientException(
+                "No active session. Sign in first.",
+                System.Net.HttpStatusCode.Unauthorized,
+                "auth.unauthorized");
         }
 
         var request = new HttpRequestMessage(method, uri);
@@ -125,6 +147,15 @@ public sealed class CfsApiClient(HttpClient httpClient, SessionState sessionStat
 
         var error = await response.Content.ReadFromJsonAsync<ApiError>(JsonOptions, cancellationToken);
         var message = error?.Message ?? $"Request failed with status code {(int)response.StatusCode}.";
-        throw new InvalidOperationException(message);
+        throw new ApiClientException(message, response.StatusCode, error?.Code);
+    }
+
+    private static async Task<T> ReadRequiredAsync<T>(
+        HttpResponseMessage response,
+        string emptyPayloadMessage,
+        CancellationToken cancellationToken)
+    {
+        return await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken)
+               ?? throw new InvalidOperationException(emptyPayloadMessage);
     }
 }

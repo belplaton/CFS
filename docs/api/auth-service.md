@@ -35,7 +35,7 @@ Request example:
 ```json
 {
   "email": "user@cfs.local",
-  "password": "secret123"
+  "password": "demo-password"
 }
 ```
 

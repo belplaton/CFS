@@ -229,6 +229,16 @@ input {
     border-color: rgba(150, 48, 35, 0.12);
 }
 
+.notice-info {
+    background: rgba(15, 106, 93, 0.1);
+    border-color: rgba(15, 106, 93, 0.16);
+}
+
+.notice-warning {
+    background: rgba(214, 162, 76, 0.18);
+    border-color: rgba(109, 74, 11, 0.12);
+}
+
 .inline-form,
 .field-stack {
     display: grid;
@@ -398,6 +408,23 @@ code {
     border-radius: 0.45rem;
     background: rgba(24, 34, 29, 0.06);
     color: var(--brand-strong);
+}
+
+.app-bootstrap-shell {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 1.5rem;
+}
+
+.app-bootstrap-card {
+    width: min(34rem, 100%);
+}
+
+.app-bootstrap-copy {
+    margin: 1rem 0 0;
+    color: var(--muted);
+    line-height: 1.7;
 }
 
 @media (max-width: 920px) {

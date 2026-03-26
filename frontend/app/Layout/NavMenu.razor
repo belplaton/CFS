@@ -1,4 +1,5 @@
 @inject SessionState SessionState
+@inject SessionCoordinator SessionCoordinator
 
 <div class="nav-shell">
     <div class="brand-card">
@@ -11,7 +12,7 @@
 
     <p class="brand-copy">
         Separate Blazor WebAssembly client talking to an ASP.NET Core BFF.
-        The downstream services are still mocks, but the HTTP shape is already explicit.
+        The UI now restores saved sessions and treats the BFF as the only network boundary.
     </p>
 
     <nav class="nav-links">
@@ -42,7 +43,14 @@
 
         @if (SessionState.IsAuthenticated)
         {
-            <button class="nav-action" @onclick="SessionState.Clear">Reset session</button>
+            <button class="nav-action" @onclick="HandleSignOutAsync">Reset session</button>
         }
     </div>
 </div>
+
+@code {
+    private async Task HandleSignOutAsync()
+    {
+        await SessionCoordinator.SignOutAsync();
+    }
+}
