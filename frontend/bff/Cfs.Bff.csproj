@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
-    <ProjectReference Include="..\Cfs.Contracts\Cfs.Contracts.csproj" />
+    <ProjectReference Include="..\contracts\Cfs.Contracts.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
