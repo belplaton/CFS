@@ -1,214 +1,290 @@
-# CFS (Cloud File Storage)
+# ☁️ Cloud File Storage
 
-Микросервисное облачное файловое хранилище с возможностью управления файлами и папками.
+Аналог Dropbox/Google Drive на микросервисах
 
 ## 📋 Описание
 
-CFS — это распределённая система для хранения файлов, состоящая из нескольких независимых сервисов:
+Проект представляет собой облачное хранилище файлов с микросервисной архитектурой.
 
-- **Auth Service** — сервис аутентификации и авторизации (Go + chi)
-- **File Service** — сервис управления файлами и папками (Python + FastAPI)
-- **Storage Service** — сервис низкоуровневого хранения данных (Go + chi)
-- **Frontend** — веб-интерфейс (Blazor)
+### Основные возможности (MVP)
+- ✅ Регистрация / авторизация (email + пароль)
+- ✅ Вход через Google (OAuth2)
+- ✅ Двухфакторная аутентификация (TOTP)
+- ✅ Верификация email
+- ✅ Восстановление пароля
+- ✅ Загрузка / скачивание / удаление файлов
+- ✅ Управление папками
+- ✅ Предпросмотр файлов
+- ✅ Поиск по имени файла
+- ✅ Корзина (30 дней)
+- ✅ Квоты: 5 ГБ (бесплатно), 100 ГБ (подписка)
 
-## 🏗 Архитектура
+## 🏗️ Архитектура
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Nginx (Reverse Proxy)                  │
-└─────────────────────────────────────────────────────────────┘
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-┌───────────────┐   ┌───────────────┐   ┌───────────────┐
-│  Auth Service │   │  File Service │   │   Frontend    │
-│    Go + chi   │   │ Python+FastAPI│   │    Blazor     │
-└───────────────┘   └───────────────┘   └───────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Storage Service                          │
-│                       Go + chi                              │
-│                                                             │
-│  ┌─────────────┐         ┌─────────────┐                    │
-│  │  PostgreSQL │         │    MinIO    │                    │
-│  └─────────────┘         └─────────────┘                    │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Caddy Gateway (8080)                      │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        │                       │                       │
+        ▼                       ▼                       ▼
+┌───────────────┐      ┌───────────────┐      ┌───────────────┐
+│ Auth Service  │      │ File Service  │      │Preview Service│
+│   (FastAPI)   │      │   (FastAPI)   │      │   (FastAPI)   │
+│    port 8000  │      │    port 8000  │      │    port 8000  │
+└───────────────┘      └───────────────┘      └───────────────┘
+        │                       │                       │
+        ▼                       ▼                       ▼
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+│  PostgreSQL  │      │  PostgreSQL  │      │  PostgreSQL  │
+│  (auth:5433) │      │  (file:5434) │      │(preview:5435)│
+└──────────────┘      └──────────────┘      └──────────────┘
+                                │
+                ┌───────────────┼───────────────┐
+                │               │               │
+                ▼               ▼               ▼
+        ┌──────────────┐ ┌──────────────┐ ┌──────────┐
+        │    MinIO     │ │    Redis     │ │ Frontend │
+        │ (9000, 9001) │ │    (6379)    │ │  (8080)  │
+        └──────────────┘ └──────────────┘ └──────────┘
 ```
 
-## 🛠 Технологический стек
-
-### Backend
-- **Go 1.26 + chi/v5**
-  - Auth Service — аутентификация и авторизация
-  - Storage Service — работа с объектным хранилищем MinIO
-  - sqlx — работа с PostgreSQL
-  
-- **Python + FastAPI**
-  - File Service — бизнес-логика управления файлами
-  - SQLAlchemy + Alembic — ORM и миграции
-  - Pydantic — валидация данных
-  - python-jose — JWT-токены
-
-### Frontend
-- **Blazor** — интерактивный веб-интерфейс
-- .NET 6/7/8
-
-### Инфраструктура
-- **Docker & Docker Compose** — контейнеризация
-- **Nginx** — обратный прокси и балансировка
-- **PostgreSQL 16** — реляционная база данных
-  - Автоматическая инициализация схемы при первом запуске
-  - Триггеры для updated_at и soft delete
-  - Индексы для оптимизации запросов
-- **MinIO** — объектное хранилище
+**Ключевые изменения:**
+- Каждый сервис имеет свою базу данных
+- Redis для кэширования и rate limiting
+- MinIO: единый бакет с префиксами пользователей
+- API keys для межсервисной коммуникации
 
 ## 🚀 Быстрый старт
 
-### Требования
-- Docker и Docker Compose
-- Git
+### 1. Клонирование репозитория
 
-### Установка
-
-1. Клонируйте репозиторий:
 ```bash
-git clone https://github.com/belplaton/CFS.git
-cd CFS
+git clone <repository-url>
+cd CloudFileStorage
 ```
 
-2. Создайте файл окружения:
+### 2. Настройка переменных окружения
+
 ```bash
+# Скопируйте пример файла окружения
 cp .env.example .env
+
+# Отредактируйте .env при необходимости (опционально)
 ```
 
-3. Отредактируйте `.env` при необходимости
+### 3. Запуск проекта
 
-4. Запустите все сервисы:
+**Вариант для Windows (рекомендуется):**
+
 ```bash
+# Просто запустите скрипт - он всё сделает сам!
+start.bat
+```
+
+Скрипт автоматически:
+1. Проверит наличие собранного frontend
+2. Соберёт React приложение (если нужно)
+3. Запустит все сервисы
+
+**Вариант для Linux/Mac:**
+
+```bash
+# Ручная сборка frontend
+docker-compose build frontend
+docker create --name temp-frontend cloudfilestorage-frontend
+docker cp temp-frontend:/frontend/dist/. ./frontend/dist/
+docker rm temp-frontend
+
+# Запуск сервисов
 docker-compose up -d
 ```
 
-5. Проверьте статус контейнеров:
+### 4. Остановка проекта
+
+**Windows:**
 ```bash
-docker-compose ps
+stop.bat
 ```
 
-6. Откройте браузер и перейдите по адресу `http://localhost`
+**Linux/Mac:**
+```bash
+docker-compose down
+```
 
-### 🔑 Демо-доступ
+### 5. Проверка работы
 
-После первого запуска в базе данных создается демо-пользователь:
+| Сервис | URL | Описание |
+|--------|-----|----------|
+| **Frontend** | http://localhost:8080 | Веб-интерфейс |
+| **Auth Service** | http://localhost:8080/api/auth/ | API аутентификации |
+| **File Service** | http://localhost:8080/api/files/ | API файлов |
+| **Preview Service** | http://localhost:8080/api/preview/ | API превью |
+| **Health Check** | http://localhost:8080/health | Проверка статуса |
+| **Auth DB** | localhost:5433 | PostgreSQL (Auth Service) |
+| **File DB** | localhost:5434 | PostgreSQL (File Service) |
+| **Preview DB** | localhost:5435 | PostgreSQL (Preview Service) |
+| **MinIO Console** | http://localhost:9001 | Консоль MinIO (только локально) |
+| **Redis** | localhost:6379 | Redis |
 
-- **Email:** `user@cfs.local`
-- **Пароль:** `demo123`
+### 6. API Документация
 
-> ⚠️ **Важно:** Это тестовая учетная запись. Измените пароль или удалите пользователя в production!
+Каждый сервис предоставляет Swagger UI:
+
+- Auth Service: http://localhost:8080/api/auth/docs
+- File Service: http://localhost:8080/api/files/docs
+- Preview Service: http://localhost:8080/api/preview/docs
 
 ## 📁 Структура проекта
 
 ```
-CFS/
+CloudFileStorage/
+├── docker-compose.yml          # Оркестрация всех сервисов
+├── .env                        # Переменные окружения
+├── .env.example                # Пример переменных
+├── ARCHITECTURE.md             # Подробная архитектура
+├── README.md                   # Этот файл
+│
+├── gateway/                    # Caddy Gateway
+│   └── Caddyfile
+│
 ├── services/
-│   ├── auth-service/         # Сервис аутентификации (Go + chi)
-│   │   ├── cmd/
-│   │   ├── internal/
-│   │   └── pkg/
-│   ├── file-service/         # Сервис управления файлами (Python + FastAPI)
-│   │   ├── src/
-│   │   │   ├── core/
-│   │   │   ├── files/
-│   │   │   ├── folders/
-│   │   │   └── shared/
-│   │   ├── tests/
-│   │   └── alembic/
-│   └── storage-service/      # Сервис хранения (Go + chi)
-│       ├── cmd/
-│       ├── internal/
-│       └── pkg/
-├── frontend/                 # Blazor-приложение
-├── nginx/
-│   └── nginx.conf            # Конфигурация прокси
-├── scripts/                  # Скрипты для развёртывания
-│   ├── init-db.sql          # Инициализация PostgreSQL
-│   └── README.md            # Документация скриптов
-├── docs/
-│   ├── architecture.md
-│   ├── api/
-│   └── diagrams/
-├── docker-compose.yml
-├── .env.example
-└── README.md
+│   ├── auth/                   # Auth Service
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   └── src/
+│   │
+│   ├── file/                   # File Service
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   └── src/
+│   │
+│   └── preview/                # Preview Service
+│       ├── Dockerfile
+│       ├── requirements.txt
+│       └── src/
+│
+└── frontend/                   # React приложение
+    ├── Dockerfile
+    ├── package.json
+    ├── vite.config.js
+    └── src/
 ```
 
-## 🔧 Разработка
+## 🛠️ Разработка
 
-### Запуск отдельных сервисов
+### Запуск отдельного сервиса (для разработки)
 
 ```bash
 # Auth Service
-docker-compose up auth-service
+cd services/auth
+docker-compose up --build
 
 # File Service
-docker-compose up file-service
+cd services/file
+docker-compose up --build
 
-# Storage Service
-docker-compose up storage-service
-```
+# Preview Service
+cd services/preview
+docker-compose up --build
 
-### Локальная разработка (без Docker)
-
-#### Auth Service
-```bash
-cd services/auth-service
-go run cmd/app/main.go
-```
-
-#### File Service
-```bash
-cd services/file-service
-pip install -r requirements.txt
-uvicorn src.main:app --reload
-```
-
-#### Storage Service
-```bash
-cd services/storage-service
-go run cmd/app/main.go
-```
-
-#### Frontend (Blazor)
-```bash
+# Frontend
 cd frontend
-dotnet run
+npm install
+npm run dev
 ```
 
-### Тесты
+### Переменные окружения
+
+Основные переменные в `.env`:
 
 ```bash
-# File Service tests
-cd services/file-service
-pytest tests/
+# PostgreSQL
+POSTGRES_USER=cloudstorage
+POSTGRES_PASSWORD=cloudstorage_secret
+POSTGRES_DB=cloudstorage
+
+# MinIO
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin_secret
+
+# JWT
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
+
+# Google OAuth (получить в Google Cloud Console)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Email (Mailtrap для разработки)
+SMTP_HOST=smtp.mailtrap.io
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASSWORD=
 ```
 
-## 📖 Документация
+## 🔧 Технологии
 
-- [Архитектура](docs/architecture.md)
-- [API Documentation](docs/api/)
-- [Диаграммы](docs/diagrams/)
+### Backend
+- **FastAPI** — веб-фреймворк
+- **SQLAlchemy** — ORM
+- **PostgreSQL** — база данных
+- **MinIO** — объектное хранилище
+- **JWT** — аутентификация
+- **Pydantic** — валидация данных
 
-## 🔐 Безопасность
+### Frontend
+- **React 18** — UI библиотека
+- **shadcn/ui** — компоненты на Radix UI + Tailwind CSS
+- **Tailwind CSS** — утилитарные стили
+- **Vite** — сборщик
+- **Zustand** — управление состоянием
+- **React Router** — роутинг
+- **Lucide React** — иконки
+- **Axios** — HTTP клиент
 
-- Хеширование паролей (bcrypt)
-- JWT-токены для аутентификации
-- Изолированные микросервисы
+### Инфраструктура
+- **Docker** — контейнеризация
+- **Caddy** — reverse proxy
+- **Docker Compose** — оркестрация
 
-## 📝 Лицензия
+## 📝 Полезные команды
+
+```bash
+# Просмотр логов всех сервисов
+docker-compose logs -f
+
+# Логи конкретного сервиса
+docker-compose logs -f auth
+
+# Перезапуск сервиса
+docker-compose restart auth
+
+# Остановка и удаление контейнеров
+docker-compose down
+
+# Остановка с удалением volumes
+docker-compose down -v
+
+# Сборка без кэша
+docker-compose build --no-cache
+
+# Запуск в фоновом режиме
+docker-compose up -d
+
+# Масштабирование сервиса
+docker-compose up -d --scale file=3
+```
+
+## 📄 Лицензия
 
 MIT
 
-## 👥 Авторы
+## 👥 Команда
 
-- Ангелов Владимир
-- Беляков Платон
-- Прибытков Степан
+Проект разработан командой из 3 разработчиков.
+
+---
+
+**Документ создан:** 31 марта 2026  
+**Версия:** 1.0

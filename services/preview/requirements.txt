@@ -1,0 +1,23 @@
+# FastAPI & Server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# Validation
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# MinIO S3
+minio==7.2.3
+
+# Image processing
+Pillow==10.2.0
+
+# PDF processing
+pdf2image==1.16.3
+
+# Document processing
+python-docx==1.1.0
+openpyxl==3.1.2
+
+# Utils
+python-dotenv==1.0.0
