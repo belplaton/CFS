@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input'
 import { ROOT_FOLDER_ID } from '@/data/mock-data'
 import { formatBytes } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth-store'
-import { getDescendantIds, getUsedBytes, useFileStore } from '@/store/file-store'
+import { canMoveItemToParent, getDescendantIds, getUsedBytes, useFileStore } from '@/store/file-store'
 
 function buildFolderOptions(items, excludedIds = []) {
   const excluded = new Set(excludedIds)
@@ -164,17 +164,17 @@ function FilesPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border bg-card p-6 shadow-sm md:p-8">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="max-w-3xl">
+      <section className="rounded-xl border bg-card p-6 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
             <div className="inline-flex items-center gap-2 rounded-md border bg-muted px-3 py-1.5 text-sm text-muted-foreground">
               <Sparkles className="h-4 w-4" />
-              Frontend workspace
+              Workspace explorer
             </div>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">Файловый менеджер</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
-              Главный сценарий экрана теперь собран вокруг рабочего пространства с файлами и папками.
-              Квота, быстрые действия и статусные блоки остаются рядом, но не забирают первичный фокус.
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight">Файлы и папки</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+              Основной режим работы теперь смещён в таблицу: быстрее сканировать список, видеть даты,
+              размеры и работать с длинными наборами файлов.
             </p>
           </div>
 
@@ -187,17 +187,17 @@ function FilesPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_360px]">
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="grid gap-4 md:grid-cols-3">
           {overviewCards.map((card) => {
             const Icon = card.icon
 
             return (
               <Card className="border bg-card shadow-sm" key={card.id}>
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <div>
                     <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{card.label}</p>
-                    <CardTitle className="mt-3 text-3xl font-semibold">{card.value}</CardTitle>
+                    <CardTitle className="mt-2 text-2xl font-semibold">{card.value}</CardTitle>
                   </div>
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg border bg-muted">
                     <Icon className="h-5 w-5 text-foreground" />
@@ -209,22 +209,28 @@ function FilesPage() {
           })}
         </div>
 
-        <QuotaCard plan={user?.plan ?? 'Free'} quotaBytes={user?.quotaBytes ?? 1} usedBytes={usedBytes} />
+        <div className="rounded-xl border bg-card p-5 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Current mode</p>
+          <p className="mt-3 text-lg font-semibold">Table-first explorer</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Основной сценарий смещён в list view. Grid остаётся как альтернативный обзорный режим.
+          </p>
+        </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_360px]">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.75fr)_340px]">
         <div className="rounded-xl border bg-card p-6 shadow-sm md:p-8">
           <div className="border-b pb-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="max-w-2xl">
                 <div className="inline-flex items-center gap-2 rounded-md border bg-muted px-3 py-1.5 text-sm text-muted-foreground">
                   <Sparkles className="h-4 w-4" />
-                  Current focus
+                  Explorer focus
                 </div>
                 <h2 className="mt-4 text-2xl font-semibold tracking-tight">Файлы и папки</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Основное рабочее пространство: поиск, сортировка, навигация по папкам и действия над
-                  элементами сосредоточены в одном блоке без лишнего визуального шума.
+                  Табличный режим даёт лучший обзор длинного списка: видно имя, тип, дату изменения,
+                  размер и действия в пределах одной рабочей области.
                 </p>
               </div>
 
@@ -270,15 +276,21 @@ function FilesPage() {
           </div>
 
           <div className="mt-4 rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-            Использовано {formatBytes(usedBytes)}. По мере готовности backend сюда подключаются quota
-            endpoint, реальные uploads и preview/download URL.
+            Double click по папке открывает её. Одиночный клик даёт фокус по строке, drag & drop
+            переносит элементы на папки и в breadcrumbs.
           </div>
 
           <div className="mt-6">
             <FileBrowser
+              canDropIntoFolder={(item, targetFolderId) => canMoveItemToParent(item.id, targetFolderId)}
               currentFolderId={currentFolderId}
               foldersById={foldersById}
               items={visibleItems}
+              onDropIntoFolder={(item, targetFolderId) =>
+                moveItem({
+                  id: item.id,
+                  parentId: targetFolderId,
+                })}
               onGoToFolder={(folderId) => openFolder(folderId)}
               onMove={(item) => setMovingItem(item)}
               onOpenFolder={(folderId) => openFolder(folderId)}
@@ -295,6 +307,8 @@ function FilesPage() {
         </div>
 
         <div className="space-y-4">
+          <QuotaCard plan={user?.plan ?? 'Free'} quotaBytes={user?.quotaBytes ?? 1} usedBytes={usedBytes} />
+
           <div className="rounded-xl border bg-card p-6 shadow-sm">
             <div className="mb-4">
               <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Quick actions</p>
@@ -309,29 +323,28 @@ function FilesPage() {
           </div>
 
           <div className="rounded-xl border bg-card p-6 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">UX focus</p>
-            <h2 className="mt-3 text-xl font-semibold">Куда смотреть пользователю</h2>
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Why this mode</p>
+            <h2 className="mt-3 text-xl font-semibold">Почему таблица удобнее</h2>
 
             <div className="mt-5 space-y-4">
               <div className="rounded-lg border bg-muted/40 p-4">
-                <p className="text-sm font-medium">Первичный фокус</p>
+                <p className="text-sm font-medium">Быстрее сканировать</p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Основной список файлов и навигация по папкам находятся в центральной рабочей зоне.
+                  На одном экране видно больше элементов и проще сравнивать файлы по дате, типу и размеру.
                 </p>
               </div>
 
               <div className="rounded-lg border bg-muted/40 p-4">
-                <p className="text-sm font-medium">Вторичный контекст</p>
+                <p className="text-sm font-medium">Проще работать с длинными списками</p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Квота, загрузка и быстрые действия вынесены в правую колонку, чтобы не спорить с
-                  основным сценарием.
+                  Sticky header и единый list rhythm лучше подходят для рабочего хранилища, чем крупные плитки.
                 </p>
               </div>
 
               <div className="rounded-lg border bg-muted/40 p-4">
-                <p className="text-sm font-medium">Следующий фронтендовый шаг</p>
+                <p className="text-sm font-medium">Следующий шаг</p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Довести interaction states, drag & drop перемещение и финальную консистентность preview.
+                  Дальше сюда логично добавлять multi-select, bulk actions и ещё более плотную файловую навигацию.
                 </p>
               </div>
             </div>

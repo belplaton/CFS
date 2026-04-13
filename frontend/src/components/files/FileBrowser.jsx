@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   FileIcon,
   FileSpreadsheet,
@@ -46,9 +47,11 @@ function buildBreadcrumbs(foldersById, currentFolderId) {
 }
 
 function FileBrowser({
+  canDropIntoFolder,
   currentFolderId,
   foldersById,
   items,
+  onDropIntoFolder,
   onGoToFolder,
   onMove,
   onOpenFolder,
@@ -58,14 +61,67 @@ function FileBrowser({
   view,
 }) {
   const breadcrumbs = buildBreadcrumbs(foldersById, currentFolderId)
+  const [draggedItem, setDraggedItem] = useState(null)
+  const [dropTargetId, setDropTargetId] = useState(null)
+  const [selectedItemId, setSelectedItemId] = useState(null)
+
+  const clearDragState = () => {
+    setDraggedItem(null)
+    setDropTargetId(null)
+  }
+
+  const handleDragStart = (item) => {
+    setDraggedItem(item)
+  }
+
+  const handleDragOver = (event, targetFolderId) => {
+    if (!draggedItem || !canDropIntoFolder(draggedItem, targetFolderId)) {
+      return
+    }
+
+    event.preventDefault()
+    if (dropTargetId !== targetFolderId) {
+      setDropTargetId(targetFolderId)
+    }
+  }
+
+  const handleDrop = (event, targetFolderId) => {
+    event.preventDefault()
+
+    if (!draggedItem || !canDropIntoFolder(draggedItem, targetFolderId)) {
+      clearDragState()
+      return
+    }
+
+    onDropIntoFolder(draggedItem, targetFolderId)
+    clearDragState()
+  }
 
   return (
     <div className="space-y-5">
+      {draggedItem ? (
+        <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          Перемещение: <strong className="text-foreground">{draggedItem.name}</strong>. Перетащи
+          элемент на папку или в breadcrumbs, чтобы сменить родительский каталог.
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-2">
         {breadcrumbs.map((crumb, index) => (
           <button
-            className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+              dropTargetId === crumb.id
+                ? 'border-primary bg-primary/10 text-foreground'
+                : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
             key={crumb.id}
+            onDragLeave={() => {
+              if (dropTargetId === crumb.id) {
+                setDropTargetId(null)
+              }
+            }}
+            onDragOver={(event) => handleDragOver(event, crumb.id)}
+            onDrop={(event) => handleDrop(event, crumb.id)}
             onClick={() => onGoToFolder(crumb.id)}
             type="button"
           >
@@ -88,8 +144,20 @@ function FileBrowser({
         <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
           {items.map((item) => (
             <div
-              className="rounded-xl border bg-background p-5 shadow-sm transition-colors hover:border-foreground/20"
+              className={`rounded-xl border bg-background p-5 shadow-sm transition-colors hover:border-foreground/20 ${
+                dropTargetId === item.id ? 'border-primary bg-primary/5' : ''
+              }`}
+              draggable
               key={item.id}
+              onDragEnd={clearDragState}
+              onDragLeave={() => {
+                if (dropTargetId === item.id) {
+                  setDropTargetId(null)
+                }
+              }}
+              onDragOver={item.kind === 'folder' ? (event) => handleDragOver(event, item.id) : undefined}
+              onDragStart={() => handleDragStart(item)}
+              onDrop={item.kind === 'folder' ? (event) => handleDrop(event, item.id) : undefined}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex h-11 w-11 items-center justify-center rounded-lg border bg-muted">
@@ -107,7 +175,10 @@ function FileBrowser({
 
               <button
                 className="mt-5 block text-left"
-                onClick={() => (item.kind === 'folder' ? onOpenFolder(item.id) : onPreview(item))}
+                onDoubleClick={() => {
+                  item.kind === 'folder' ? onOpenFolder(item.id) : onPreview(item)
+                }}
+                onClick={() => setSelectedItemId(item.id)}
                 type="button"
               >
                 <p className="text-lg font-semibold">{item.name}</p>
@@ -125,22 +196,50 @@ function FileBrowser({
 
       {items.length > 0 && view === 'list' ? (
         <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
-          <div className="overflow-x-auto">
-            <div className="min-w-[760px]">
-              <div className="grid grid-cols-[minmax(0,1.8fr)_140px_140px_100px] gap-4 border-b bg-muted/40 px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          <div className="max-h-[72vh] overflow-auto">
+            <div className="min-w-[860px]">
+              <div className="sticky top-0 z-10 grid grid-cols-[36px_minmax(0,2.4fr)_160px_170px_120px_100px] gap-4 border-b bg-background/95 px-6 py-4 text-xs uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
+                <span />
                 <span>Название</span>
                 <span>Тип</span>
+                <span>Изменён</span>
                 <span>Размер</span>
                 <span className="text-right">Действия</span>
               </div>
               {items.map((item) => (
                 <div
-                  className="grid grid-cols-[minmax(0,1.8fr)_140px_140px_100px] gap-4 border-b px-6 py-4 last:border-b-0 hover:bg-muted/20"
+                  className={`grid grid-cols-[36px_minmax(0,2.4fr)_160px_170px_120px_100px] gap-4 border-b px-6 py-3.5 last:border-b-0 ${
+                    selectedItemId === item.id
+                      ? 'bg-muted/50'
+                      : dropTargetId === item.id
+                        ? 'bg-primary/5'
+                        : 'hover:bg-muted/20'
+                  }`}
+                  draggable
                   key={item.id}
+                  onDragEnd={clearDragState}
+                  onDragLeave={() => {
+                    if (dropTargetId === item.id) {
+                      setDropTargetId(null)
+                    }
+                  }}
+                  onDragOver={item.kind === 'folder' ? (event) => handleDragOver(event, item.id) : undefined}
+                  onDragStart={() => handleDragStart(item)}
+                  onDrop={item.kind === 'folder' ? (event) => handleDrop(event, item.id) : undefined}
                 >
+                  <div className="flex items-center">
+                    <div
+                      className={`h-4 w-4 rounded-sm border transition-colors ${
+                        selectedItemId === item.id ? 'border-primary bg-primary' : 'border-border bg-background'
+                      }`}
+                    />
+                  </div>
                   <button
                     className="flex min-w-0 items-center gap-3 text-left"
-                    onClick={() => (item.kind === 'folder' ? onOpenFolder(item.id) : onPreview(item))}
+                    onDoubleClick={() => {
+                      item.kind === 'folder' ? onOpenFolder(item.id) : onPreview(item)
+                    }}
+                    onClick={() => setSelectedItemId(item.id)}
                     type="button"
                   >
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted">
@@ -148,10 +247,15 @@ function FileBrowser({
                     </div>
                     <div className="min-w-0">
                       <p className="truncate font-medium">{item.name}</p>
-                      <p className="text-sm text-muted-foreground">{formatDate(item.updatedAt)}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {item.kind === 'folder'
+                          ? 'Открывается двойным кликом'
+                          : 'Превью открывается двойным кликом'}
+                      </p>
                     </div>
                   </button>
                   <span className="self-center text-sm text-muted-foreground">{getFileTypeLabel(item)}</span>
+                  <span className="self-center text-sm text-muted-foreground">{formatDate(item.updatedAt)}</span>
                   <span className="self-center text-sm text-muted-foreground">
                     {item.kind === 'file' ? formatBytes(item.size) : '-'}
                   </span>

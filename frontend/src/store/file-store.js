@@ -16,6 +16,30 @@ function collectDescendantIds(items, itemId) {
   )
 }
 
+function canMoveItem(items, id, parentId) {
+  const item = items.find((entry) => entry.id === id)
+  const normalizedParentId = parentId === ROOT_FOLDER_ID ? null : parentId
+
+  if (!item) {
+    return false
+  }
+
+  if (item.parentId === normalizedParentId) {
+    return false
+  }
+
+  if (item.kind !== 'folder') {
+    return true
+  }
+
+  if (item.id === parentId) {
+    return false
+  }
+
+  const descendantIds = collectDescendantIds(items, item.id)
+  return !descendantIds.includes(parentId)
+}
+
 function calculateUsedBytes(items) {
   return items.reduce((total, item) => {
     if (item.kind !== 'file' || item.deletedAt) {
@@ -33,7 +57,7 @@ export const useFileStore = create(
       currentFolderId: ROOT_FOLDER_ID,
       searchQuery: '',
       sortBy: 'updatedAt',
-      view: 'grid',
+      view: 'list',
       previewItemId: null,
       ensureSeedData: () => {
         if (get().items.length > 0) {
@@ -99,17 +123,23 @@ export const useFileStore = create(
           ),
         })),
       moveItem: ({ id, parentId }) =>
-        set((state) => ({
-          items: state.items.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  parentId: parentId === ROOT_FOLDER_ID ? null : parentId,
-                  updatedAt: new Date().toISOString(),
-                }
-              : item,
-          ),
-        })),
+        set((state) => {
+          if (!canMoveItem(state.items, id, parentId)) {
+            return state
+          }
+
+          return {
+            items: state.items.map((item) =>
+              item.id === id
+                ? {
+                    ...item,
+                    parentId: parentId === ROOT_FOLDER_ID ? null : parentId,
+                    updatedAt: new Date().toISOString(),
+                  }
+                : item,
+            ),
+          }
+        }),
       moveToTrash: (id) =>
         set((state) => {
           const ids = [id, ...collectDescendantIds(state.items, id)]
@@ -163,12 +193,27 @@ export const useFileStore = create(
           currentFolderId: ROOT_FOLDER_ID,
           searchQuery: '',
           sortBy: 'updatedAt',
-          view: 'grid',
+          view: 'list',
           previewItemId: null,
         }),
     }),
     {
       name: 'cfs-file-store',
+      version: 2,
+      migrate: (persistedState, version) => {
+        if (!persistedState) {
+          return persistedState
+        }
+
+        if (version < 2) {
+          return {
+            ...persistedState,
+            view: 'list',
+          }
+        }
+
+        return persistedState
+      },
       partialize: (state) => ({
         items: state.items,
         currentFolderId: state.currentFolderId,
@@ -187,4 +232,9 @@ export function getUsedBytes() {
 export function getDescendantIds(itemId) {
   const items = useFileStore.getState().items
   return collectDescendantIds(items, itemId)
+}
+
+export function canMoveItemToParent(id, parentId) {
+  const items = useFileStore.getState().items
+  return canMoveItem(items, id, parentId)
 }

@@ -21,8 +21,8 @@ FROM nginx:alpine
 # Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy nginx config (optional, can be added later)
-# COPY nginx.conf /etc/nginx/conf.d/default.conf
+# SPA fallback for direct refresh on /app/*
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

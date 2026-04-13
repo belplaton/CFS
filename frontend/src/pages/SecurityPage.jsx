@@ -26,6 +26,8 @@ function SecurityPage() {
     toggleTwoFactor: state.toggleTwoFactor,
     user: state.user,
   }))
+  const backupCodes = user?.backupCodes ?? []
+  const totpSecret = user?.totpSecret ?? 'JBSW-Y3DP-EHPK-3PXP'
 
   return (
     <div className="space-y-6">
@@ -52,14 +54,45 @@ function SecurityPage() {
           </div>
           <h2 className="mt-6 text-3xl font-semibold">Two-factor access</h2>
           <p className="mt-4 text-sm leading-7 text-muted-foreground">
-            Пока это безопасный UI stub для будущей интеграции: на backend будут QR-код, TOTP
-            challenge при логине и backup codes.
+            Сейчас это mock-flow без backend: после включения 2FA следующий логин уже требует
+            отдельный TOTP challenge step. Позже сюда подключатся QR-код, реальная генерация кодов
+            и серверная валидация.
           </p>
           <div className="mt-8 rounded-xl border bg-muted/40 p-5">
             <p className="text-sm text-muted-foreground">Текущее состояние</p>
             <p className="mt-2 text-2xl font-semibold">
               {user?.twoFactorEnabled ? '2FA включена' : '2FA выключена'}
             </p>
+            {user?.twoFactorEnabled ? (
+              <div className="mt-4 space-y-4">
+                <div>
+                  <p className="text-sm font-medium">Демо TOTP-код</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Для mock challenge используется код <strong>246810</strong>.
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium">Mock secret</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{totpSecret}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium">Backup codes</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {backupCodes.length > 0 ? backupCodes.map((code) => (
+                      <div className="rounded-md border bg-background px-3 py-2 text-sm" key={code}>
+                        {code}
+                      </div>
+                    )) : (
+                      <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground sm:col-span-2">
+                        Backup codes будут показаны после повторного включения 2FA.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
           <Button className="mt-6 w-full py-6 text-base" onClick={toggleTwoFactor}>
             {user?.twoFactorEnabled ? 'Отключить 2FA' : 'Включить 2FA'}
