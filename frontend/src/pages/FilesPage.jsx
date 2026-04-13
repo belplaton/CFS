@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 
 import FileBrowser from '@/components/files/FileBrowser'
+import { useI18n } from '@/components/app/I18nProvider'
+import LanguageSwitcher from '@/components/app/LanguageSwitcher'
 import PreviewModal from '@/components/files/PreviewModal'
 import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 import { Button } from '@/components/ui/button'
@@ -16,7 +18,7 @@ import { ROOT_FOLDER_ID } from '@/data/mock-data'
 import { buildFolderSizeCache, getItemEffectiveSize, matchesTypeFilter } from '@/lib/file-metrics'
 import { canMoveItemToParent, getDescendantIds, useFileStore } from '@/store/file-store'
 
-function buildFolderOptions(items, excludedIds = []) {
+function buildFolderOptions(items, t, language, excludedIds = []) {
   const excluded = new Set(excludedIds)
   const folders = items.filter((item) => item.kind === 'folder' && !item.deletedAt && !excluded.has(item.id))
   const byParent = folders.reduce((accumulator, folder) => {
@@ -29,10 +31,10 @@ function buildFolderOptions(items, excludedIds = []) {
     return accumulator
   }, {})
 
-  const result = [{ id: ROOT_FOLDER_ID, label: 'My Files' }]
+  const result = [{ id: ROOT_FOLDER_ID, label: t('files.myFiles') }]
 
   function walk(parentId, depth = 0) {
-    const children = (byParent[parentId] ?? []).sort((left, right) => left.name.localeCompare(right.name, 'ru'))
+    const children = (byParent[parentId] ?? []).sort((left, right) => left.name.localeCompare(right.name, language))
 
     children.forEach((folder) => {
       result.push({
@@ -47,22 +49,22 @@ function buildFolderOptions(items, excludedIds = []) {
   return result
 }
 
-function getCurrentFolderTitle(currentFolderId, foldersById) {
+function getCurrentFolderTitle(currentFolderId, foldersById, t) {
   if (currentFolderId === ROOT_FOLDER_ID) {
-    return 'My Files'
+    return t('files.myFiles')
   }
 
-  return foldersById[currentFolderId]?.name ?? 'My Files'
+  return foldersById[currentFolderId]?.name ?? t('files.myFiles')
 }
 
-function ModalCard({ children, onClose, title }) {
+function ModalCard({ children, onClose, title, t }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
       <div className="w-full max-w-lg rounded-xl border bg-background p-6 shadow-2xl">
         <div className="flex items-center justify-between gap-4">
           <h3 className="text-2xl font-semibold">{title}</h3>
           <Button onClick={onClose} variant="ghost">
-            Закрыть
+            {t('files.close')}
           </Button>
         </div>
         <div className="mt-6">{children}</div>
@@ -72,6 +74,7 @@ function ModalCard({ children, onClose, title }) {
 }
 
 function FilesPage() {
+  const { language, t } = useI18n()
   const {
     closePreview,
     createFolder,
@@ -105,7 +108,7 @@ function FilesPage() {
   }, [ensureSeedData])
 
   const foldersById = Object.fromEntries(items.filter((item) => item.kind === 'folder').map((item) => [item.id, item]))
-  const currentFolderTitle = getCurrentFolderTitle(currentFolderId, foldersById)
+  const currentFolderTitle = getCurrentFolderTitle(currentFolderId, foldersById, t)
   const normalizedCurrentFolderId = currentFolderId === ROOT_FOLDER_ID ? null : currentFolderId
   const folderSizeCache = buildFolderSizeCache(items)
   const visibleItems = items
@@ -126,11 +129,11 @@ function FilesPage() {
       }
 
       if (sortBy === 'name') {
-        return left.name.localeCompare(right.name, 'ru')
+        return left.name.localeCompare(right.name, language)
       }
 
       if (sortBy === 'nameDesc') {
-        return right.name.localeCompare(left.name, 'ru')
+        return right.name.localeCompare(left.name, language)
       }
 
       if (sortBy === 'size') {
@@ -153,6 +156,8 @@ function FilesPage() {
   const moveOptions = movingItems.length
     ? buildFolderOptions(
         items,
+        t,
+        language,
         movingItems.flatMap((item) =>
           item.kind === 'folder' ? [item.id, ...getDescendantIds(item.id)] : [item.id],
         ),
@@ -182,7 +187,7 @@ function FilesPage() {
 
     if (
       !window.confirm(
-        `Переместить ${selectedItems.length} элемент(ов) в корзину?`,
+        t('files.confirmTrashMany', { count: selectedItems.length }),
       )
     ) {
       return
@@ -204,9 +209,9 @@ function FilesPage() {
       />
 
       <section className="space-y-3 rounded-xl border bg-card p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Current folder</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{t('files.currentFolder')}</p>
             <h1 className="truncate text-[2rem] font-semibold tracking-tight">{currentFolderTitle}</h1>
           </div>
 
@@ -230,15 +235,16 @@ function FilesPage() {
               onChange={(event) => setSortBy(event.target.value)}
               value={sortBy}
             >
-              <option value="updatedAt">Сначала новые</option>
-              <option value="updatedAtAsc">Сначала старые</option>
-              <option value="name">По имени</option>
-              <option value="nameDesc">По имени (Z-A)</option>
-              <option value="size">По размеру</option>
-              <option value="sizeAsc">По размеру (малые)</option>
+              <option value="updatedAt">{t('files.sort.updatedDesc')}</option>
+              <option value="updatedAtAsc">{t('files.sort.updatedAsc')}</option>
+              <option value="name">{t('files.sort.nameAsc')}</option>
+              <option value="nameDesc">{t('files.sort.nameDesc')}</option>
+              <option value="size">{t('files.sort.sizeDesc')}</option>
+              <option value="sizeAsc">{t('files.sort.sizeAsc')}</option>
             </select>
 
-            <ThemeSwitcher compact settingsMode />
+            <LanguageSwitcher compact />
+            <ThemeSwitcher compact />
           </div>
         </div>
 
@@ -250,7 +256,7 @@ function FilesPage() {
             <Input
               className="h-10 bg-background pl-11 shadow-sm"
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Поиск по текущей папке"
+              placeholder={t('files.searchPlaceholder')}
               value={searchQuery}
             />
           </div>
@@ -260,23 +266,23 @@ function FilesPage() {
             onChange={(event) => setTypeFilter(event.target.value)}
             value={typeFilter}
           >
-            <option value="all">Все типы</option>
-            <option value="folders">Папки</option>
-            <option value="files">Файлы</option>
-            <option value="images">Изображения</option>
-            <option value="pdf">PDF</option>
-            <option value="documents">Документы</option>
-            <option value="archives">Архивы</option>
+            <option value="all">{t('files.typeFilter.all')}</option>
+            <option value="folders">{t('files.typeFilter.folders')}</option>
+            <option value="files">{t('files.typeFilter.files')}</option>
+            <option value="images">{t('files.typeFilter.images')}</option>
+            <option value="pdf">{t('files.typeFilter.pdf')}</option>
+            <option value="documents">{t('files.typeFilter.documents')}</option>
+            <option value="archives">{t('files.typeFilter.archives')}</option>
           </select>
 
           <div className="flex flex-wrap gap-2">
             <Button className="h-10 gap-2 px-4" onClick={() => setIsCreateOpen(true)} variant="outline">
               <FolderPlus className="h-4 w-4" />
-              Папка
+              {t('files.createFolderShort')}
             </Button>
             <Button className="h-10 gap-2 px-4" onClick={() => document.getElementById('file-upload-trigger')?.click()}>
               <UploadCloud className="h-4 w-4" />
-              Загрузить
+              {t('files.upload')}
             </Button>
           </div>
         </div>
@@ -299,10 +305,10 @@ function FilesPage() {
         onRename={(item) => setRenamingItem(item)}
         onBulkMove={() => setMovingItems(selectedItems)}
         onBulkTrash={moveManyToTrash}
-        onBulkDownload={() => window.alert('Массовое скачивание включим после подключения API архивации.')}
+        onBulkDownload={() => window.alert(t('files.bulkDownloadSoon'))}
         onSelectionChange={setSelectedItemIds}
         onTrash={(item) => {
-          if (window.confirm(`Переместить "${item.name}" в корзину?`)) {
+          if (window.confirm(t('files.confirmTrashSingle', { name: item.name }))) {
             moveToTrash(item.id)
           }
         }}
@@ -312,7 +318,7 @@ function FilesPage() {
       />
 
       {isCreateOpen ? (
-        <ModalCard onClose={() => setIsCreateOpen(false)} title="Создать папку">
+        <ModalCard onClose={() => setIsCreateOpen(false)} t={t} title={t('files.createFolderTitle')}>
           <form
             className="space-y-4"
             onSubmit={(event) => {
@@ -331,9 +337,9 @@ function FilesPage() {
               setIsCreateOpen(false)
             }}
           >
-            <Input autoFocus name="folderName" placeholder="Например, Invoices" />
+            <Input autoFocus name="folderName" placeholder={t('files.folderNamePlaceholder')} />
             <Button className="w-full" type="submit">
-              Создать
+              {t('common.create')}
             </Button>
           </form>
         </ModalCard>
@@ -342,7 +348,8 @@ function FilesPage() {
       {movingItems.length ? (
         <ModalCard
           onClose={() => setMovingItems([])}
-          title={movingItems.length > 1 ? 'Переместить элементы' : 'Переместить элемент'}
+          t={t}
+          title={movingItems.length > 1 ? t('files.moveManyTitle') : t('files.moveOneTitle')}
         >
           <form
             className="space-y-4"
@@ -364,19 +371,15 @@ function FilesPage() {
           >
             <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm text-foreground">
               {movingItems.length > 1 ? (
-                <>
-                  Перемещаем элементов: <strong>{movingItems.length}</strong>
-                </>
+                <>{t('files.movingCount', { count: movingItems.length })}</>
               ) : (
-                <>
-                  Перемещаем: <strong>{movingItems[0].name}</strong>
-                </>
+                <>{t('files.movingName', { name: movingItems[0].name })}</>
               )}
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="move-parent">
-                Целевая папка
+                {t('files.targetFolder')}
               </label>
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -393,14 +396,14 @@ function FilesPage() {
             </div>
 
             <Button className="w-full" type="submit">
-              Переместить
+              {t('common.move')}
             </Button>
           </form>
         </ModalCard>
       ) : null}
 
       {renamingItem ? (
-        <ModalCard onClose={() => setRenamingItem(null)} title="Переименовать">
+        <ModalCard onClose={() => setRenamingItem(null)} t={t} title={t('files.renameTitle')}>
           <form
             className="space-y-4"
             onSubmit={(event) => {
@@ -421,7 +424,7 @@ function FilesPage() {
           >
             <Input autoFocus defaultValue={renamingItem.name} name="itemName" />
             <Button className="w-full" type="submit">
-              Сохранить
+              {t('common.save')}
             </Button>
           </form>
         </ModalCard>

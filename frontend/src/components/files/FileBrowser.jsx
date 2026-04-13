@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 
 import { formatBytes, formatDate, getFileTypeLabel } from '@/lib/utils'
+import { useI18n } from '@/components/app/I18nProvider'
 import ItemActionsMenu from '@/components/files/ItemActionsMenu'
 import { Button } from '@/components/ui/button'
 
@@ -31,9 +32,9 @@ function getItemIcon(item) {
   return <FileIcon className="h-5 w-5 text-muted-foreground" />
 }
 
-function buildBreadcrumbs(foldersById, currentFolderId) {
+function buildBreadcrumbs(foldersById, currentFolderId, t) {
   if (currentFolderId === 'root') {
-    return [{ id: 'root', name: 'My Files' }]
+    return [{ id: 'root', name: t('files.myFiles') }]
   }
 
   const breadcrumb = []
@@ -44,7 +45,7 @@ function buildBreadcrumbs(foldersById, currentFolderId) {
     pointer = pointer.parentId ? foldersById[pointer.parentId] : null
   }
 
-  return [{ id: 'root', name: 'My Files' }, ...breadcrumb]
+  return [{ id: 'root', name: t('files.myFiles') }, ...breadcrumb]
 }
 
 function FileBrowser({
@@ -67,7 +68,8 @@ function FileBrowser({
   selectedItemIds,
   view,
 }) {
-  const breadcrumbs = buildBreadcrumbs(foldersById, currentFolderId)
+  const { language, t } = useI18n()
+  const breadcrumbs = buildBreadcrumbs(foldersById, currentFolderId, t)
   const [draggedItem, setDraggedItem] = useState(null)
   const [dropTargetId, setDropTargetId] = useState(null)
   const selectedIdsSet = new Set(selectedItemIds)
@@ -132,8 +134,7 @@ function FileBrowser({
     <div className="space-y-3">
       {draggedItem ? (
         <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-          Перемещение: <strong className="text-foreground">{draggedItem.name}</strong>. Перетащи
-          элемент на папку или в breadcrumbs, чтобы сменить родительский каталог.
+          {t('files.selectionMovedHint', { name: draggedItem.name })}
         </div>
       ) : null}
 
@@ -166,9 +167,9 @@ function FileBrowser({
 
       {items.length === 0 ? (
         <div className="rounded-xl border border-dashed bg-muted/20 px-6 py-16 text-center">
-          <p className="text-2xl font-semibold">В этой папке пока пусто</p>
+          <p className="text-2xl font-semibold">{t('files.emptyTitle')}</p>
           <p className="mt-3 text-sm leading-7 text-muted-foreground">
-            Создайте папку, перетащите файлы или откройте поиск, чтобы проверить другие разделы.
+            {t('files.emptyDescription')}
           </p>
         </div>
       ) : null}
@@ -178,7 +179,7 @@ function FileBrowser({
           <div className="flex h-14 items-center justify-between rounded-lg border bg-background px-3">
             <label className="inline-flex items-center gap-2 text-sm text-foreground">
               <input
-                aria-label="Выбрать все элементы"
+                aria-label={t('files.selectAll')}
                 checked={allSelected}
                 className="h-4 w-4 accent-primary"
                 onChange={(event) => toggleAllSelection(event.target.checked)}
@@ -189,17 +190,17 @@ function FileBrowser({
                 }}
                 type="checkbox"
               />
-              Выбрано: <strong>{selectedCount}</strong>
+              {t('files.selectedShort', { count: selectedCount })}
             </label>
             <div className="flex items-center gap-2">
               <Button disabled={selectedCount === 0} onClick={onBulkMove} size="sm" variant="outline">
-                Переместить
+                {t('common.move')}
               </Button>
               <Button disabled={selectedCount === 0} onClick={onBulkTrash} size="sm" variant="outline">
-                В корзину
+                {t('itemMenu.toTrash')}
               </Button>
               <Button disabled={selectedCount === 0} onClick={onBulkDownload} size="sm" variant="outline">
-                Скачать
+                {t('common.download')}
               </Button>
             </div>
           </div>
@@ -251,12 +252,12 @@ function FileBrowser({
 
                 <div className="mt-3 block w-full text-left">
                   <p className="truncate text-base font-semibold leading-tight">{item.name}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{getFileTypeLabel(item)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{getFileTypeLabel(item, t)}</p>
                 </div>
 
                 <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
                   <span>{item.kind === 'file' ? formatBytes(item.size) : formatBytes(item.cachedSize ?? 0)}</span>
-                  <span>{formatDate(item.updatedAt)}</span>
+                  <span>{formatDate(item.updatedAt, language)}</span>
                 </div>
               </div>
             ))}
@@ -271,7 +272,7 @@ function FileBrowser({
               <div className="sticky top-0 z-20 grid h-14 grid-cols-[36px_minmax(0,2.8fr)_160px_190px_120px_72px] items-center gap-4 border-b bg-background/95 px-4 backdrop-blur">
                 <span className="flex h-4 items-center">
                   <input
-                    aria-label="Выбрать все элементы"
+                    aria-label={t('files.selectAll')}
                     checked={allSelected}
                     className="h-4 w-4 accent-primary"
                     onChange={(event) => toggleAllSelection(event.target.checked)}
@@ -287,27 +288,27 @@ function FileBrowser({
                 {selectedCount > 0 ? (
                   <>
                     <span className="col-span-2 truncate text-sm leading-none text-foreground">
-                      Выбрано элементов: <strong>{selectedCount}</strong>
+                      {t('files.selectedItems', { count: selectedCount })}
                     </span>
                     <div className="col-span-3 flex items-center justify-end gap-2 whitespace-nowrap">
                       <Button onClick={onBulkMove} size="sm" variant="outline">
-                        Переместить
+                        {t('common.move')}
                       </Button>
                       <Button onClick={onBulkTrash} size="sm" variant="outline">
-                        В корзину
+                        {t('itemMenu.toTrash')}
                       </Button>
                       <Button onClick={onBulkDownload} size="sm" variant="outline">
-                        Скачать
+                        {t('common.download')}
                       </Button>
                     </div>
                   </>
                 ) : (
                   <>
-                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">Название</span>
-                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">Владелец</span>
-                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">Изменён</span>
-                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">Размер</span>
-                    <span className="text-right text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">Действия</span>
+                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">{t('files.columns.name')}</span>
+                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">{t('files.columns.owner')}</span>
+                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">{t('files.columns.updated')}</span>
+                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">{t('files.columns.size')}</span>
+                    <span className="text-right text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">{t('files.columns.actions')}</span>
                   </>
                 )}
               </div>
@@ -334,7 +335,7 @@ function FileBrowser({
                 >
                   <div className="flex items-center">
                     <input
-                      aria-label={`Выбрать ${item.name}`}
+                      aria-label={`${t('files.selectAll')}: ${item.name}`}
                       checked={selectedIdsSet.has(item.id)}
                       className="h-4 w-4 accent-primary"
                       onChange={(event) => setSelectionForItem(item.id, event.target.checked)}
@@ -356,8 +357,8 @@ function FileBrowser({
                       <p className="truncate font-medium">{item.name}</p>
                     </div>
                   </button>
-                  <span className="self-center text-sm text-muted-foreground">me</span>
-                  <span className="self-center text-sm text-muted-foreground">{formatDate(item.updatedAt)}</span>
+                  <span className="self-center text-sm text-muted-foreground">{t('common.ownerMe')}</span>
+                  <span className="self-center text-sm text-muted-foreground">{formatDate(item.updatedAt, language)}</span>
                   <span className="self-center text-sm text-muted-foreground">
                     {item.kind === 'file' ? formatBytes(item.size) : formatBytes(item.cachedSize ?? 0)}
                   </span>

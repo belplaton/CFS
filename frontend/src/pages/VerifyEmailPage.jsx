@@ -1,11 +1,13 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
+import { useI18n } from '@/components/app/I18nProvider'
 import AuthShell from '@/components/auth/AuthShell'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/store/auth-store'
 
 function VerifyEmailPage() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const verifyEmail = useAuthStore((state) => state.verifyEmail)
@@ -14,23 +16,23 @@ function VerifyEmailPage() {
 
   return (
     <AuthShell
-      description="Страница верификации уже выделена в отдельный маршрут и готова под verify-email endpoint, повторную отправку письма и состояние успешной активации."
-      eyebrow="Email Verification"
+      description={t('verifyEmail.description')}
+      eyebrow={t('verifyEmail.eyebrow')}
       footer={
         <span>
-          Уже подтвердили почту? <Link className="font-medium underline underline-offset-4" to="/login">Перейти ко входу</Link>
+          {t('verifyEmail.alreadyVerified')}{' '}
+          <Link className="font-medium underline underline-offset-4" to="/login">{t('verifyEmail.goToLogin')}</Link>
         </span>
       }
-      title="Подтверждение email"
+      title={t('verifyEmail.title')}
     >
       <Card className="border-0 bg-transparent shadow-none">
         <CardHeader className="px-0 pt-0">
-          <CardTitle className="text-3xl">Verify account</CardTitle>
+          <CardTitle className="text-3xl">{t('verifyEmail.cardTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
           <div className="rounded-lg border bg-muted/40 p-5 text-sm leading-7 text-foreground">
-            Проверочное письмо направлено на <strong>{email}</strong>. В демо-режиме подтверждение
-            имитируется кнопкой ниже.
+            {t('verifyEmail.sentTo', { email })}
           </div>
           <Button
             className="w-full py-6 text-base"
@@ -39,10 +41,10 @@ function VerifyEmailPage() {
               navigate('/login')
             }}
           >
-            Подтвердить email
+            {t('verifyEmail.confirm')}
           </Button>
           <Button className="w-full py-6 text-base" variant="outline">
-            Отправить письмо повторно
+            {t('verifyEmail.resend')}
           </Button>
         </CardContent>
       </Card>

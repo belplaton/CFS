@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react'
 import { FolderPlus, UploadCloud } from 'lucide-react'
 
+import { useI18n } from '@/components/app/I18nProvider'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 function UploadDropzone({ compact = false, onCreateFolder, onFilesSelected }) {
+  const { t } = useI18n()
   const inputRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
 
@@ -48,11 +50,9 @@ function UploadDropzone({ compact = false, onCreateFolder, onFilesSelected }) {
           <div className="flex h-10 w-10 items-center justify-center rounded-lg border bg-muted">
             <UploadCloud className="h-5 w-5" />
           </div>
-          <h2 className={cn('font-semibold', compact ? 'mt-4 text-lg' : 'mt-5 text-2xl')}>Загрузка и структура данных</h2>
+          <h2 className={cn('font-semibold', compact ? 'mt-4 text-lg' : 'mt-5 text-2xl')}>{t('uploadZone.title')}</h2>
           <p className={cn('mt-3 text-muted-foreground', compact ? 'text-sm leading-6' : 'text-sm leading-7 md:text-base')}>
-            {compact
-              ? 'Быстрый доступ к загрузке файлов и созданию папок внутри текущего раздела.'
-              : 'Компонент уже покрывает drag & drop, создание папок и локальное обновление состояния. Когда backend будет готов, сюда можно подключить upload endpoint и прогресс по Axios.'}
+            {compact ? t('uploadZone.compactDescription') : t('uploadZone.description')}
           </p>
         </div>
 
@@ -67,11 +67,11 @@ function UploadDropzone({ compact = false, onCreateFolder, onFilesSelected }) {
           />
           <Button className={cn('gap-2 px-6', compact && 'w-full justify-center')} onClick={() => inputRef.current?.click()}>
             <UploadCloud className="h-4 w-4" />
-            Выбрать файлы
+            {t('uploadZone.selectFiles')}
           </Button>
           <Button className={cn('gap-2 px-6', compact && 'w-full justify-center')} onClick={onCreateFolder} variant="outline">
             <FolderPlus className="h-4 w-4" />
-            Создать папку
+            {t('files.createFolderTitle')}
           </Button>
         </div>
       </div>

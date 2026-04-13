@@ -3,12 +3,14 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import ThemeProvider from '@/components/app/ThemeProvider'
+import { setLanguage } from '@/i18n/manager'
 import LoginPage from '@/pages/LoginPage'
 import { useAuthStore } from '@/store/auth-store'
 
 describe('LoginPage', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    setLanguage('en')
     useAuthStore.getState().resetAuthState()
     useAuthStore.getState().login({ email: 'demo@cloudstorage.dev' })
     useAuthStore.getState().toggleTwoFactor()
@@ -28,12 +30,12 @@ describe('LoginPage', () => {
       </ThemeProvider>,
     )
 
-    expect(screen.getByText(/Для аккаунта/i)).toBeInTheDocument()
+    expect(screen.getByText(/Two-factor protection is enabled/i)).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText(/Код подтверждения/i), {
+    fireEvent.change(screen.getByLabelText(/Verification code/i), {
       target: { value: '246810' },
     })
-    fireEvent.click(screen.getByRole('button', { name: /Подтвердить вход/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Confirm sign in/i }))
 
     expect(await screen.findByText('files page')).toBeInTheDocument()
   })

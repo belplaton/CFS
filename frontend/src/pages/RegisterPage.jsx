@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 
+import { useI18n } from '@/components/app/I18nProvider'
 import AuthShell from '@/components/auth/AuthShell'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -7,23 +8,25 @@ import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/store/auth-store'
 
 function RegisterPage() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const register = useAuthStore((state) => state.register)
 
   return (
     <AuthShell
-      description="Экран регистрации уже соответствует roadmap: есть отдельная страница, подготовленная под verify-email и будущую backend-валидацию."
-      eyebrow="Register"
+      description={t('register.description')}
+      eyebrow={t('register.eyebrow')}
       footer={
         <span>
-          Уже есть аккаунт? <Link className="font-medium underline underline-offset-4" to="/login">Войти</Link>
+          {t('register.haveAccount')}{' '}
+          <Link className="font-medium underline underline-offset-4" to="/login">{t('register.signIn')}</Link>
         </span>
       }
-      title="Создание аккаунта"
+      title={t('register.title')}
     >
       <Card className="border-0 bg-transparent shadow-none">
         <CardHeader className="px-0 pt-0">
-          <CardTitle className="text-3xl">Create account</CardTitle>
+          <CardTitle className="text-3xl">{t('register.cardTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
           <form
@@ -43,24 +46,24 @@ function RegisterPage() {
           >
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="register-name">
-                Имя
+                {t('register.name')}
               </label>
-              <Input id="register-name" name="fullName" placeholder="Platon Belyakov" type="text" />
+              <Input id="register-name" name="fullName" placeholder={t('register.namePlaceholder')} type="text" />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="register-email">
-                Email
+                {t('common.email')}
               </label>
               <Input id="register-email" name="email" placeholder="name@cloudstorage.dev" type="email" />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="register-password">
-                Пароль
+                {t('common.password')}
               </label>
-              <Input id="register-password" name="password" placeholder="Минимум 8 символов" type="password" />
+              <Input id="register-password" name="password" placeholder={t('register.passwordPlaceholder')} type="password" />
             </div>
             <Button className="w-full py-6 text-base" type="submit">
-              Зарегистрироваться
+              {t('register.submit')}
             </Button>
           </form>
         </CardContent>

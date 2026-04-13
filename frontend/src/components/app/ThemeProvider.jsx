@@ -9,23 +9,15 @@ const ThemeContext = createContext(null)
 export const themeOptions = [
   {
     value: 'light',
-    label: 'Белая',
-    description: 'Светлая нейтральная палитра',
   },
   {
     value: 'dark',
-    label: 'Тёмная',
-    description: 'Контрастная тёмная тема',
   },
   {
     value: 'midnight',
-    label: 'Тёмная синяя',
-    description: 'Тёмная тема с синеватым тоном',
   },
   {
     value: 'system',
-    label: 'Системная',
-    description: 'Следует настройке ОС',
   },
 ]
 

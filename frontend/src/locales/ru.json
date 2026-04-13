@@ -1,0 +1,337 @@
+{
+  "common": {
+    "email": "Email",
+    "password": "Пароль",
+    "close": "Закрыть",
+    "save": "Сохранить",
+    "cancel": "Отмена",
+    "create": "Создать",
+    "rename": "Переименовать",
+    "move": "Переместить",
+    "download": "Скачать",
+    "free": "Free",
+    "folder": "Папка",
+    "file": "Файл",
+    "image": "Изображение",
+    "document": "Документ",
+    "pdf": "PDF",
+    "table": "Таблица",
+    "text": "Текст",
+    "none": "n/a",
+    "ownerMe": "me"
+  },
+  "language": {
+    "label": "Язык",
+    "en": "English",
+    "ru": "Русский"
+  },
+  "theme": {
+    "title": "Тема",
+    "subtitle": "Оформление интерфейса",
+    "settings": "Настройки",
+    "options": {
+      "light": {
+        "label": "Белая",
+        "description": "Светлая нейтральная палитра"
+      },
+      "dark": {
+        "label": "Тёмная",
+        "description": "Контрастная тёмная тема"
+      },
+      "midnight": {
+        "label": "Тёмная синяя",
+        "description": "Тёмная тема с синеватым тоном"
+      },
+      "system": {
+        "label": "Системная",
+        "description": "Следует настройке ОС"
+      }
+    }
+  },
+  "appShell": {
+    "brandTitle": "Cloud File Storage",
+    "brandEyebrow": "Drive",
+    "navigation": "Навигация",
+    "nav": {
+      "files": "Файлы",
+      "trash": "Корзина",
+      "security": "Безопасность",
+      "billing": "Тарифы"
+    },
+    "storage": "Storage",
+    "planLabel": "{plan} plan",
+    "usedOfQuota": "{used} из {quota}",
+    "currentLoad": "Текущая загрузка",
+    "remaining": "Свободно",
+    "getMoreStorage": "Get More Storage",
+    "foldersCount": "Папок",
+    "activeFilesCount": "Активных файлов",
+    "trashCount": "В корзине",
+    "logout": "Выйти"
+  },
+  "authShell": {
+    "brandTitle": "Cloud File Storage",
+    "brandSubtitle": "shadcn/ui frontend",
+    "uiCoverageTitle": "Что уже отражено в UI",
+    "uiCoverageValue": "Роутинг, auth flow, file manager, trash, quota, security",
+    "backendWaitingTitle": "Чего ждём от backend",
+    "backendWaitingValue": "Реальные endpoints Auth/File/Preview и upload pipeline"
+  },
+  "landing": {
+    "workspaceTitle": "Frontend delivery workspace",
+    "login": "Войти",
+    "openApp": "Открыть приложение",
+    "start": "Начать",
+    "badge": "Фронтенд адаптирован под текущий roadmap проекта",
+    "heroTitle": "Не очередной лендинг, а рабочая SPA-заготовка для облачного хранилища.",
+    "heroDescription": "В репозитории backend ещё не дошёл до полноценного Auth/File/Preview слоя, поэтому фронтенд собран как интеграционный scaffold: реальные маршруты, экраны, state и UX для файлового менеджера уже готовы, а API можно подключать по мере появления endpoints.",
+    "openFileManager": "Перейти к файловому менеджеру",
+    "openSecurityFlow": "Посмотреть security flow",
+    "scopeTitle": "Current scope",
+    "scopeItem1": "Файловый менеджер, навигация по папкам, поиск, сортировка, корзина и квоты.",
+    "scopeItem2": "Auth screens, verify/reset flow и подготовленный раздел security/2FA.",
+    "scopeItem3": "Preview modal и integration-ready слой под File/Preview API.",
+    "pillars": {
+      "workflowTitle": "File workflow",
+      "workflowDescription": "Drag & drop, структура папок, корзина, preview-слой и квота уже сведены в единый UI.",
+      "authTitle": "Auth foundation",
+      "authDescription": "Отдельные экраны для login, register, verify email, reset password и security settings.",
+      "integrationTitle": "Integration-ready",
+      "integrationDescription": "Компоненты подготовлены под Auth/File/Preview сервисы и не завязаны на текущий лендинг."
+    }
+  },
+  "login": {
+    "eyebrow": "Login",
+    "title": "Вход в рабочее пространство",
+    "description": "Текущий backend auth ещё не реализован полностью, поэтому экран уже построен как production-like форма, но работает через локальный store до подключения API.",
+    "noAccount": "Нет аккаунта?",
+    "create": "Создать",
+    "cardTitleSignIn": "Sign in",
+    "cardTitleTwoFactor": "Two-factor check",
+    "twoFactorIntro": "Для аккаунта {email} включена двухфакторная защита. В демо-режиме используй TOTP-код 246810 или один из backup codes из раздела безопасности.",
+    "totpLabel": "Код подтверждения",
+    "totpPlaceholder": "246810 или backup code",
+    "totpInvalid": "Неверный TOTP или backup code. Попробуй ещё раз.",
+    "confirmLogin": "Подтвердить вход",
+    "backToLogin": "Вернуться к логину",
+    "forgotPassword": "Забыли пароль?",
+    "signIn": "Войти",
+    "continueGoogle": "Продолжить через Google",
+    "demoHint": "Демо-режим: если для аккаунта включена 2FA, после логина откроется отдельный шаг подтверждения. Дальше сюда подключается POST /api/auth/login и TOTP challenge flow."
+  },
+  "register": {
+    "eyebrow": "Register",
+    "title": "Создание аккаунта",
+    "description": "Экран регистрации уже соответствует roadmap: есть отдельная страница, подготовленная под verify-email и будущую backend-валидацию.",
+    "haveAccount": "Уже есть аккаунт?",
+    "signIn": "Войти",
+    "cardTitle": "Create account",
+    "name": "Имя",
+    "namePlaceholder": "Platon Belyakov",
+    "passwordPlaceholder": "Минимум 8 символов",
+    "submit": "Зарегистрироваться"
+  },
+  "forgotPassword": {
+    "eyebrow": "Password Reset",
+    "title": "Запрос на сброс пароля",
+    "description": "Страница подготовлена под request-reset endpoint и уже вписана в auth-flow приложения.",
+    "remembered": "Вспомнили пароль?",
+    "backToLogin": "Назад ко входу",
+    "cardTitle": "Reset access",
+    "submit": "Отправить ссылку"
+  },
+  "resetPassword": {
+    "eyebrow": "New Password",
+    "title": "Установка нового пароля",
+    "description": "Новый пароль пока не уходит в backend, но отдельная форма и маршрут уже собраны под полный reset-password flow.",
+    "backQuestion": "Вернуться ко входу?",
+    "openLogin": "Открыть login",
+    "cardTitle": "Reset password",
+    "demoEmailInfo": "В демо-режиме письмо имитируется переходом на эту страницу для {email}.",
+    "newPassword": "Новый пароль",
+    "newPasswordPlaceholder": "Минимум 8 символов",
+    "repeatPassword": "Повторите пароль",
+    "repeatPasswordPlaceholder": "Повторите новый пароль",
+    "saveAndBack": "Сохранить и вернуться ко входу"
+  },
+  "verifyEmail": {
+    "eyebrow": "Email Verification",
+    "title": "Подтверждение email",
+    "description": "Страница верификации уже выделена в отдельный маршрут и готова под verify-email endpoint, повторную отправку письма и состояние успешной активации.",
+    "alreadyVerified": "Уже подтвердили почту?",
+    "goToLogin": "Перейти ко входу",
+    "cardTitle": "Verify account",
+    "sentTo": "Проверочное письмо направлено на {email}. В демо-режиме подтверждение имитируется кнопкой ниже.",
+    "confirm": "Подтвердить email",
+    "resend": "Отправить письмо повторно"
+  },
+  "notFound": {
+    "title": "Страница не найдена",
+    "description": "Маршрут отсутствует в текущем фронтенд-срезе. Вернитесь на главную или откройте файловый менеджер.",
+    "home": "Главная",
+    "app": "Приложение"
+  },
+  "files": {
+    "currentFolder": "Current folder",
+    "myFiles": "My Files",
+    "sort": {
+      "updatedDesc": "Сначала новые",
+      "updatedAsc": "Сначала старые",
+      "nameAsc": "По имени",
+      "nameDesc": "По имени (Z-A)",
+      "sizeDesc": "По размеру",
+      "sizeAsc": "По размеру (малые)"
+    },
+    "searchPlaceholder": "Поиск по текущей папке",
+    "typeFilter": {
+      "all": "Все типы",
+      "folders": "Папки",
+      "files": "Файлы",
+      "images": "Изображения",
+      "pdf": "PDF",
+      "documents": "Документы",
+      "archives": "Архивы"
+    },
+    "createFolderShort": "Папка",
+    "upload": "Загрузить",
+    "bulkDownloadSoon": "Массовое скачивание включим после подключения API архивации.",
+    "confirmTrashMany": "Переместить {count} элемент(ов) в корзину?",
+    "confirmTrashSingle": "Переместить \"{name}\" в корзину?",
+    "createFolderTitle": "Создать папку",
+    "folderNamePlaceholder": "Например, Invoices",
+    "moveOneTitle": "Переместить элемент",
+    "moveManyTitle": "Переместить элементы",
+    "movingCount": "Перемещаем элементов: {count}",
+    "movingName": "Перемещаем: {name}",
+    "targetFolder": "Целевая папка",
+    "renameTitle": "Переименовать",
+    "close": "Закрыть",
+    "selectionMovedHint": "Перемещение: {name}. Перетащи элемент на папку или в breadcrumbs, чтобы сменить родительский каталог.",
+    "emptyTitle": "В этой папке пока пусто",
+    "emptyDescription": "Создайте папку, перетащите файлы или откройте поиск, чтобы проверить другие разделы.",
+    "selectAll": "Выбрать все элементы",
+    "selectedShort": "Выбрано: {count}",
+    "selectedItems": "Выбрано элементов: {count}",
+    "columns": {
+      "name": "Название",
+      "owner": "Владелец",
+      "updated": "Изменён",
+      "size": "Размер",
+      "actions": "Действия"
+    }
+  },
+  "itemMenu": {
+    "openFolder": "Открыть папку",
+    "openPreview": "Открыть превью",
+    "rename": "Переименовать",
+    "move": "Переместить",
+    "toTrash": "В корзину"
+  },
+  "preview": {
+    "imagePreview": "Image Preview",
+    "pdfSlot": "PDF viewer slot",
+    "pdfDescription": "Подготовлено место под браузерный просмотр PDF. После готовности Preview Service сюда подключается поток с рендерами страниц или iframe на presigned URL.",
+    "documentPlaceholder": "Document preview placeholder",
+    "documentDescription": "Компонент готов к отображению docx/xlsx preview и thumbnails. До появления preview API показывает описание точки интеграции.",
+    "metadataPlaceholder": "Metadata preview",
+    "metadataDescription": "Для нестандартных форматов сейчас доступен безопасный fallback с метаданными. Дальше сюда можно добавить presigned download или специализированный viewer.",
+    "metadata": "Метаданные",
+    "type": "Тип",
+    "size": "Размер",
+    "updated": "Обновлён",
+    "backendStep": "Следующий backend шаг",
+    "backendStepDescription": "Подключить GET /api/preview/:id и GET /api/files/:id/download, чтобы modal перестал быть демо-слоем и стал полноценным viewer.",
+    "downloadFile": "Скачать файл"
+  },
+  "uploadZone": {
+    "title": "Загрузка и структура данных",
+    "compactDescription": "Быстрый доступ к загрузке файлов и созданию папок внутри текущего раздела.",
+    "description": "Компонент уже покрывает drag & drop, создание папок и локальное обновление состояния. Когда backend будет готов, сюда можно подключить upload endpoint и прогресс по Axios.",
+    "selectFiles": "Выбрать файлы"
+  },
+  "trash": {
+    "eyebrow": "Trash",
+    "title": "Корзина",
+    "description": "Отдельная страница корзины закрывает спринт 5 по roadmap. Восстановление и безвозвратное удаление уже отрисованы на уровне интерфейса и store.",
+    "emptyTrash": "Очистить корзину",
+    "emptyTrashConfirm": "Очистить корзину полностью?",
+    "columns": {
+      "name": "Название",
+      "type": "Тип",
+      "deleted": "Удалено",
+      "actions": "Действия"
+    },
+    "emptyTitle": "Корзина пуста",
+    "emptyDescription": "Когда появятся soft-delete endpoint-ы backend, эта страница будет получать данные из API.",
+    "hardDeleteConfirm": "Удалить \"{name}\" безвозвратно?"
+  },
+  "security": {
+    "eyebrow": "Security",
+    "title": "Безопасность аккаунта",
+    "description": "Центр управления методами входа, восстановления и 2FA. Все экраны готовы для интеграции backend endpoints.",
+    "emailVerified": "Email подтверждён",
+    "emailNotVerified": "Email ещё не подтверждён",
+    "twoFactorTitle": "Two-factor access",
+    "twoFactorDescription": "После включения вход требует отдельный TOTP challenge step.",
+    "status": "Статус",
+    "enabled": "Включена",
+    "disabled": "Выключена",
+    "demoCode": "Демо-код",
+    "disable2fa": "Отключить 2FA",
+    "enable2fa": "Включить 2FA",
+    "emailTitle": "Email verification",
+    "emailDescription": "Проверка email и повторная отправка ссылки подтверждения.",
+    "openVerify": "Открыть verify",
+    "resendFlow": "Resend flow",
+    "passwordTitle": "Password recovery",
+    "passwordDescription": "Запрос письма для reset и экран ввода нового пароля.",
+    "requestReset": "Запросить reset",
+    "newPassword": "Новый пароль",
+    "backupTitle": "Backup codes",
+    "backupDescription": "Коды скрыты по умолчанию. Для показа требуется повторный ввод пароля.",
+    "backupUnavailable": "Backup codes доступны после включения 2FA.",
+    "showBackupCodes": "Показать backup codes",
+    "identityTitle": "Подтверждение личности",
+    "identityDescription": "Для показа backup codes повторно введите пароль от аккаунта.",
+    "identityPlaceholder": "Повторно введите пароль",
+    "identityError": "Введите пароль (минимум 6 символов).",
+    "confirm": "Подтвердить",
+    "backupModalTitle": "Backup codes",
+    "backupModalDescription": "Сохраните коды в безопасном месте. Каждый код можно использовать только один раз.",
+    "backupMissing": "Backup codes отсутствуют. Выключите и снова включите 2FA для генерации.",
+    "hideBackupCodes": "Скрыть backup codes"
+  },
+  "billing": {
+    "eyebrow": "Storage plans",
+    "title": "Тарифы хранилища",
+    "description": "Экран пока работает в mock-режиме фронтенда. Подключим оплату после готовности billing API.",
+    "usedNow": "Текущее использование: {used}",
+    "successMessage": "План успешно обновлен. Новая квота уже применена в workspace.",
+    "badges": {
+      "free": "Текущий baseline",
+      "pro": "Рекомендуем",
+      "team": "Для команд"
+    },
+    "features": {
+      "free1": "5 GB storage",
+      "free2": "Базовый файловый менеджер",
+      "free3": "Preview изображений",
+      "pro1": "100 GB storage",
+      "pro2": "Приоритетная обработка preview",
+      "pro3": "История версий и расширенные лимиты",
+      "team1": "500 GB storage",
+      "team2": "Совместные workspace-папки",
+      "team3": "Расширенные права доступа"
+    },
+    "month": "/ month",
+    "quota": "Квота: {quota}",
+    "downgradeBlocked": "Нельзя применить: используется {used} при лимите {limit}.",
+    "currentPlan": "Текущий план",
+    "applying": "Применяем...",
+    "choosePlan": "Выбрать план",
+    "confirmTitle": "Подтверждение смены плана",
+    "confirmText": "Сменить план с {from} на {to}?",
+    "confirmQuota": "Новая квота: {quota}. Используется сейчас: {used}.",
+    "confirmButton": "Подтвердить"
+  }
+}

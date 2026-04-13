@@ -1,0 +1,337 @@
+{
+  "common": {
+    "email": "Email",
+    "password": "Password",
+    "close": "Close",
+    "save": "Save",
+    "cancel": "Cancel",
+    "create": "Create",
+    "rename": "Rename",
+    "move": "Move",
+    "download": "Download",
+    "free": "Free",
+    "folder": "Folder",
+    "file": "File",
+    "image": "Image",
+    "document": "Document",
+    "pdf": "PDF",
+    "table": "Spreadsheet",
+    "text": "Text",
+    "none": "n/a",
+    "ownerMe": "me"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "ru": "Russian"
+  },
+  "theme": {
+    "title": "Theme",
+    "subtitle": "Interface appearance",
+    "settings": "Settings",
+    "options": {
+      "light": {
+        "label": "Light",
+        "description": "Light neutral palette"
+      },
+      "dark": {
+        "label": "Dark",
+        "description": "High-contrast dark theme"
+      },
+      "midnight": {
+        "label": "Midnight Blue",
+        "description": "Dark theme with blue tint"
+      },
+      "system": {
+        "label": "System",
+        "description": "Follows OS preference"
+      }
+    }
+  },
+  "appShell": {
+    "brandTitle": "Cloud File Storage",
+    "brandEyebrow": "Drive",
+    "navigation": "Navigation",
+    "nav": {
+      "files": "Files",
+      "trash": "Trash",
+      "security": "Security",
+      "billing": "Plans"
+    },
+    "storage": "Storage",
+    "planLabel": "{plan} plan",
+    "usedOfQuota": "{used} of {quota}",
+    "currentLoad": "Current load",
+    "remaining": "Remaining",
+    "getMoreStorage": "Get More Storage",
+    "foldersCount": "Folders",
+    "activeFilesCount": "Active files",
+    "trashCount": "In trash",
+    "logout": "Log out"
+  },
+  "authShell": {
+    "brandTitle": "Cloud File Storage",
+    "brandSubtitle": "shadcn/ui frontend",
+    "uiCoverageTitle": "What is already in UI",
+    "uiCoverageValue": "Routing, auth flow, file manager, trash, quota, security",
+    "backendWaitingTitle": "What we wait from backend",
+    "backendWaitingValue": "Real Auth/File/Preview endpoints and upload pipeline"
+  },
+  "landing": {
+    "workspaceTitle": "Frontend delivery workspace",
+    "login": "Sign in",
+    "openApp": "Open app",
+    "start": "Start",
+    "badge": "Frontend aligned to current project roadmap",
+    "heroTitle": "Not another landing page, but a working SPA scaffold for cloud storage.",
+    "heroDescription": "Backend is still catching up to full Auth/File/Preview stack, so frontend is built as an integration scaffold: real routes, screens, state and UX are ready, and APIs can be connected as endpoints appear.",
+    "openFileManager": "Go to file manager",
+    "openSecurityFlow": "View security flow",
+    "scopeTitle": "Current scope",
+    "scopeItem1": "File manager, folder navigation, search, sorting, trash and quotas.",
+    "scopeItem2": "Auth screens, verify/reset flow and prepared security/2FA section.",
+    "scopeItem3": "Preview modal and integration-ready layer for File/Preview API.",
+    "pillars": {
+      "workflowTitle": "File workflow",
+      "workflowDescription": "Drag & drop, folder structure, trash, preview layer and quota are merged into one UI.",
+      "authTitle": "Auth foundation",
+      "authDescription": "Separate screens for login, register, verify email, reset password and security settings.",
+      "integrationTitle": "Integration-ready",
+      "integrationDescription": "Components are prepared for Auth/File/Preview services and not tied to the current landing."
+    }
+  },
+  "login": {
+    "eyebrow": "Login",
+    "title": "Sign in to workspace",
+    "description": "Current backend auth is not fully implemented yet, so this screen already has production-like UX, but works on local store until API integration.",
+    "noAccount": "No account yet?",
+    "create": "Create one",
+    "cardTitleSignIn": "Sign in",
+    "cardTitleTwoFactor": "Two-factor check",
+    "twoFactorIntro": "Two-factor protection is enabled for {email}. In demo mode use TOTP code 246810 or one of backup codes from security page.",
+    "totpLabel": "Verification code",
+    "totpPlaceholder": "246810 or backup code",
+    "totpInvalid": "Invalid TOTP or backup code. Try again.",
+    "confirmLogin": "Confirm sign in",
+    "backToLogin": "Back to login",
+    "forgotPassword": "Forgot password?",
+    "signIn": "Sign in",
+    "continueGoogle": "Continue with Google",
+    "demoHint": "Demo mode: if 2FA is enabled for account, an extra verification step appears after login. Then connect POST /api/auth/login and TOTP challenge flow."
+  },
+  "register": {
+    "eyebrow": "Register",
+    "title": "Create account",
+    "description": "Registration screen matches roadmap: dedicated page prepared for verify-email and future backend validation.",
+    "haveAccount": "Already have an account?",
+    "signIn": "Sign in",
+    "cardTitle": "Create account",
+    "name": "Name",
+    "namePlaceholder": "Platon Belyakov",
+    "passwordPlaceholder": "Minimum 8 characters",
+    "submit": "Register"
+  },
+  "forgotPassword": {
+    "eyebrow": "Password Reset",
+    "title": "Reset password request",
+    "description": "This page is prepared for request-reset endpoint and is already part of app auth-flow.",
+    "remembered": "Remembered your password?",
+    "backToLogin": "Back to sign in",
+    "cardTitle": "Reset access",
+    "submit": "Send reset link"
+  },
+  "resetPassword": {
+    "eyebrow": "New Password",
+    "title": "Set new password",
+    "description": "New password is not sent to backend yet, but route and form are already prepared for full reset-password flow.",
+    "backQuestion": "Return to sign in?",
+    "openLogin": "Open login",
+    "cardTitle": "Reset password",
+    "demoEmailInfo": "In demo mode the email flow is simulated by opening this page for {email}.",
+    "newPassword": "New password",
+    "newPasswordPlaceholder": "Minimum 8 characters",
+    "repeatPassword": "Repeat password",
+    "repeatPasswordPlaceholder": "Repeat new password",
+    "saveAndBack": "Save and return to sign in"
+  },
+  "verifyEmail": {
+    "eyebrow": "Email Verification",
+    "title": "Verify email",
+    "description": "Verification page is split into dedicated route and ready for verify-email endpoint, resend flow and success state.",
+    "alreadyVerified": "Already verified your email?",
+    "goToLogin": "Go to sign in",
+    "cardTitle": "Verify account",
+    "sentTo": "Verification email sent to {email}. In demo mode confirmation is simulated by the button below.",
+    "confirm": "Verify email",
+    "resend": "Resend email"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "Route is not present in current frontend slice. Return to landing or open file manager.",
+    "home": "Home",
+    "app": "Application"
+  },
+  "files": {
+    "currentFolder": "Current folder",
+    "myFiles": "My Files",
+    "sort": {
+      "updatedDesc": "Newest first",
+      "updatedAsc": "Oldest first",
+      "nameAsc": "By name",
+      "nameDesc": "By name (Z-A)",
+      "sizeDesc": "By size",
+      "sizeAsc": "By size (smallest)"
+    },
+    "searchPlaceholder": "Search in current folder",
+    "typeFilter": {
+      "all": "All types",
+      "folders": "Folders",
+      "files": "Files",
+      "images": "Images",
+      "pdf": "PDF",
+      "documents": "Documents",
+      "archives": "Archives"
+    },
+    "createFolderShort": "Folder",
+    "upload": "Upload",
+    "bulkDownloadSoon": "Bulk download will be enabled after archive API integration.",
+    "confirmTrashMany": "Move {count} item(s) to trash?",
+    "confirmTrashSingle": "Move \"{name}\" to trash?",
+    "createFolderTitle": "Create folder",
+    "folderNamePlaceholder": "For example, Invoices",
+    "moveOneTitle": "Move item",
+    "moveManyTitle": "Move items",
+    "movingCount": "Moving items: {count}",
+    "movingName": "Moving: {name}",
+    "targetFolder": "Target folder",
+    "renameTitle": "Rename",
+    "close": "Close",
+    "selectionMovedHint": "Moving: {name}. Drop onto folder or breadcrumbs to change parent.",
+    "emptyTitle": "This folder is empty",
+    "emptyDescription": "Create a folder, drag files here, or use search to check other sections.",
+    "selectAll": "Select all items",
+    "selectedShort": "Selected: {count}",
+    "selectedItems": "Selected items: {count}",
+    "columns": {
+      "name": "Name",
+      "owner": "Owner",
+      "updated": "Updated",
+      "size": "Size",
+      "actions": "Actions"
+    }
+  },
+  "itemMenu": {
+    "openFolder": "Open folder",
+    "openPreview": "Open preview",
+    "rename": "Rename",
+    "move": "Move",
+    "toTrash": "Move to trash"
+  },
+  "preview": {
+    "imagePreview": "Image Preview",
+    "pdfSlot": "PDF viewer slot",
+    "pdfDescription": "Space for browser PDF preview is ready. After Preview Service is available, page renders or iframe with presigned URL can be connected here.",
+    "documentPlaceholder": "Document preview placeholder",
+    "documentDescription": "Component is ready for docx/xlsx preview and thumbnails. Until preview API appears, it shows integration placeholder.",
+    "metadataPlaceholder": "Metadata preview",
+    "metadataDescription": "For unsupported formats there is a safe metadata fallback. Later add presigned download or specialized viewer.",
+    "metadata": "Metadata",
+    "type": "Type",
+    "size": "Size",
+    "updated": "Updated",
+    "backendStep": "Next backend step",
+    "backendStepDescription": "Connect GET /api/preview/:id and GET /api/files/:id/download so this modal becomes a full viewer.",
+    "downloadFile": "Download file"
+  },
+  "uploadZone": {
+    "title": "Upload and data structure",
+    "compactDescription": "Quick access to upload files and create folders in current section.",
+    "description": "Component already covers drag & drop, folder creation and local state updates. Once backend is ready, upload endpoint and Axios progress can be connected here.",
+    "selectFiles": "Choose files"
+  },
+  "trash": {
+    "eyebrow": "Trash",
+    "title": "Trash",
+    "description": "Dedicated trash page closes roadmap sprint 5. Restore and hard-delete are already implemented on UI + store level.",
+    "emptyTrash": "Empty trash",
+    "emptyTrashConfirm": "Empty trash completely?",
+    "columns": {
+      "name": "Name",
+      "type": "Type",
+      "deleted": "Deleted",
+      "actions": "Actions"
+    },
+    "emptyTitle": "Trash is empty",
+    "emptyDescription": "When backend soft-delete endpoints are ready, this page will receive data from API.",
+    "hardDeleteConfirm": "Delete \"{name}\" permanently?"
+  },
+  "security": {
+    "eyebrow": "Security",
+    "title": "Account security",
+    "description": "Control center for sign-in methods, recovery and 2FA. All screens are ready for backend endpoint integration.",
+    "emailVerified": "Email verified",
+    "emailNotVerified": "Email not verified",
+    "twoFactorTitle": "Two-factor access",
+    "twoFactorDescription": "After enabling, sign in requires separate TOTP challenge step.",
+    "status": "Status",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "demoCode": "Demo code",
+    "disable2fa": "Disable 2FA",
+    "enable2fa": "Enable 2FA",
+    "emailTitle": "Email verification",
+    "emailDescription": "Email verification and confirmation-link resend flow.",
+    "openVerify": "Open verify",
+    "resendFlow": "Resend flow",
+    "passwordTitle": "Password recovery",
+    "passwordDescription": "Reset request email and new password screen.",
+    "requestReset": "Request reset",
+    "newPassword": "New password",
+    "backupTitle": "Backup codes",
+    "backupDescription": "Codes are hidden by default. Re-auth is required to reveal.",
+    "backupUnavailable": "Backup codes are available only after enabling 2FA.",
+    "showBackupCodes": "Show backup codes",
+    "identityTitle": "Identity confirmation",
+    "identityDescription": "To reveal backup codes, re-enter account password.",
+    "identityPlaceholder": "Re-enter password",
+    "identityError": "Enter password (minimum 6 characters).",
+    "confirm": "Confirm",
+    "backupModalTitle": "Backup codes",
+    "backupModalDescription": "Store codes in a safe place. Each code can be used only once.",
+    "backupMissing": "No backup codes found. Disable and enable 2FA to generate again.",
+    "hideBackupCodes": "Hide backup codes"
+  },
+  "billing": {
+    "eyebrow": "Storage plans",
+    "title": "Storage plans",
+    "description": "This screen currently runs in frontend mock mode. Payment integration will be connected after billing API is ready.",
+    "usedNow": "Current usage: {used}",
+    "successMessage": "Plan updated successfully. New quota is already applied to workspace.",
+    "badges": {
+      "free": "Current baseline",
+      "pro": "Recommended",
+      "team": "For teams"
+    },
+    "features": {
+      "free1": "5 GB storage",
+      "free2": "Basic file manager",
+      "free3": "Image preview",
+      "pro1": "100 GB storage",
+      "pro2": "Priority preview processing",
+      "pro3": "Version history and extended limits",
+      "team1": "500 GB storage",
+      "team2": "Shared workspace folders",
+      "team3": "Advanced access rights"
+    },
+    "month": "/ month",
+    "quota": "Quota: {quota}",
+    "downgradeBlocked": "Cannot apply: currently using {used} at limit {limit}.",
+    "currentPlan": "Current plan",
+    "applying": "Applying...",
+    "choosePlan": "Choose plan",
+    "confirmTitle": "Confirm plan change",
+    "confirmText": "Switch plan from {from} to {to}?",
+    "confirmQuota": "New quota: {quota}. Current usage: {used}.",
+    "confirmButton": "Confirm"
+  }
+}

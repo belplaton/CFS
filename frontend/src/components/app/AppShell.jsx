@@ -1,6 +1,7 @@
 import { Cloud, CreditCard, HardDrive, LogOut, ShieldCheck, Trash2 } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
+import { useI18n } from '@/components/app/I18nProvider'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatBytes } from '@/lib/utils'
@@ -9,13 +10,14 @@ import { getFileStats } from '@/lib/file-metrics'
 import { useFileStore } from '@/store/file-store'
 
 const navigation = [
-  { to: '/app/files', label: 'Файлы', icon: HardDrive },
-  { to: '/app/trash', label: 'Корзина', icon: Trash2 },
-  { to: '/app/security', label: 'Безопасность', icon: ShieldCheck },
-  { to: '/app/billing', label: 'Тарифы', icon: CreditCard },
+  { to: '/app/files', key: 'files', icon: HardDrive },
+  { to: '/app/trash', key: 'trash', icon: Trash2 },
+  { to: '/app/security', key: 'security', icon: ShieldCheck },
+  { to: '/app/billing', key: 'billing', icon: CreditCard },
 ]
 
 function AppShell() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const logout = useAuthStore((state) => state.logout)
   const user = useAuthStore((state) => state.user)
@@ -35,15 +37,15 @@ function AppShell() {
               <Cloud className="h-5 w-5 text-foreground" />
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Drive</p>
-              <h1 className="text-base font-semibold">Cloud File Storage</h1>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{t('appShell.brandEyebrow')}</p>
+              <h1 className="text-base font-semibold">{t('appShell.brandTitle')}</h1>
             </div>
           </div>
 
           <div className="mt-8">
-            <p className="mb-3 px-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">Навигация</p>
+            <p className="mb-3 px-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">{t('appShell.navigation')}</p>
             <nav className="space-y-1">
-              {navigation.map(({ to, label, icon: Icon }) => (
+              {navigation.map(({ to, key, icon: Icon }) => (
                 <NavLink
                   className={({ isActive }) =>
                     cn(
@@ -55,17 +57,17 @@ function AppShell() {
                   to={to}
                 >
                   <Icon className="h-4 w-4" />
-                  {label}
+                  {t(`appShell.nav.${key}`)}
                 </NavLink>
               ))}
             </nav>
           </div>
 
           <div className="mt-6 space-y-3 rounded-xl border bg-card p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Storage</p>
-            <p className="text-lg font-semibold">{plan} plan</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t('appShell.storage')}</p>
+            <p className="text-lg font-semibold">{t('appShell.planLabel', { plan })}</p>
             <p className="text-sm text-muted-foreground">
-              {formatBytes(usedBytes)} из {formatBytes(quotaBytes)}
+              {t('appShell.usedOfQuota', { used: formatBytes(usedBytes), quota: formatBytes(quotaBytes) })}
             </p>
 
             <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -73,7 +75,7 @@ function AppShell() {
             </div>
 
             <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>Свободно</span>
+              <span>{t('appShell.remaining')}</span>
               <span>{formatBytes(remainingBytes)}</span>
             </div>
 
@@ -82,21 +84,21 @@ function AppShell() {
               onClick={() => navigate('/app/billing')}
               variant="outline"
             >
-              Get More Storage
+              {t('appShell.getMoreStorage')}
             </Button>
           </div>
 
           <div className="mt-3 space-y-2 rounded-xl border bg-card p-4 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Папок</span>
+              <span className="text-muted-foreground">{t('appShell.foldersCount')}</span>
               <span className="font-medium">{folderCount}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Активных файлов</span>
+              <span className="text-muted-foreground">{t('appShell.activeFilesCount')}</span>
               <span className="font-medium">{fileCount}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">В корзине</span>
+              <span className="text-muted-foreground">{t('appShell.trashCount')}</span>
               <span className="font-medium">{trashCount}</span>
             </div>
           </div>
@@ -111,7 +113,7 @@ function AppShell() {
               variant="outline"
             >
               <LogOut className="h-4 w-4" />
-              Выйти
+              {t('appShell.logout')}
             </Button>
           </div>
         </aside>

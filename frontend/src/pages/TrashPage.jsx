@@ -1,40 +1,43 @@
 import { RotateCcw, Trash2 } from 'lucide-react'
 
+import { useI18n } from '@/components/app/I18nProvider'
+import LanguageSwitcher from '@/components/app/LanguageSwitcher'
 import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 import { Button } from '@/components/ui/button'
 import { formatBytes, formatDate, getFileTypeLabel } from '@/lib/utils'
 import { useFileStore } from '@/store/file-store'
 
 function TrashPage() {
+  const { language, t } = useI18n()
   const { deletePermanent, emptyTrash, items, restoreItem } = useFileStore((state) => state)
   const trashItems = items.filter((item) => item.deletedAt)
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border bg-card p-6 shadow-sm md:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Trash</p>
-            <h1 className="mt-3 text-3xl font-semibold">Корзина</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-              Отдельная страница корзины закрывает спринт 5 по roadmap. Восстановление и
-              безвозвратное удаление уже отрисованы на уровне интерфейса и store.
+      <section className="rounded-xl border bg-card p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3 md:flex-nowrap">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{t('trash.eyebrow')}</p>
+            <h1 className="mt-3 text-3xl font-semibold">{t('trash.title')}</h1>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground">
+              {t('trash.description')}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Button
               className="gap-2"
               onClick={() => {
-                if (window.confirm('Очистить корзину полностью?')) {
+                if (window.confirm(t('trash.emptyTrashConfirm'))) {
                   emptyTrash()
                 }
               }}
               variant="outline"
             >
               <Trash2 className="h-4 w-4" />
-              Очистить корзину
+              {t('trash.emptyTrash')}
             </Button>
-            <ThemeSwitcher compact settingsMode />
+            <LanguageSwitcher compact />
+            <ThemeSwitcher compact />
           </div>
         </div>
       </section>
@@ -43,17 +46,17 @@ function TrashPage() {
         <div className="overflow-x-auto">
           <div className="min-w-[820px]">
             <div className="grid grid-cols-[minmax(0,1.8fr)_140px_150px_170px] gap-4 border-b bg-muted/40 px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              <span>Название</span>
-              <span>Тип</span>
-              <span>Удалено</span>
-              <span className="text-right">Действия</span>
+              <span>{t('trash.columns.name')}</span>
+              <span>{t('trash.columns.type')}</span>
+              <span>{t('trash.columns.deleted')}</span>
+              <span className="text-right">{t('trash.columns.actions')}</span>
             </div>
 
             {trashItems.length === 0 ? (
               <div className="px-6 py-16 text-center">
-                <p className="text-2xl font-semibold">Корзина пуста</p>
+                <p className="text-2xl font-semibold">{t('trash.emptyTitle')}</p>
                 <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                  Когда появятся soft-delete endpoint-ы backend, эта страница будет получать данные из API.
+                  {t('trash.emptyDescription')}
                 </p>
               </div>
             ) : null}
@@ -66,18 +69,18 @@ function TrashPage() {
                 <div className="min-w-0">
                   <p className="truncate font-medium">{item.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    {item.size ? formatBytes(item.size) : 'Folder'}
+                    {item.size ? formatBytes(item.size) : t('common.folder')}
                   </p>
                 </div>
-                <span className="self-center text-sm text-muted-foreground">{getFileTypeLabel(item)}</span>
-                <span className="self-center text-sm text-muted-foreground">{formatDate(item.deletedAt)}</span>
+                <span className="self-center text-sm text-muted-foreground">{getFileTypeLabel(item, t)}</span>
+                <span className="self-center text-sm text-muted-foreground">{formatDate(item.deletedAt, language)}</span>
                 <div className="flex items-center justify-end gap-2">
                   <Button onClick={() => restoreItem(item.id)} size="icon" variant="outline">
                     <RotateCcw className="h-4 w-4" />
                   </Button>
                   <Button
                     onClick={() => {
-                      if (window.confirm(`Удалить "${item.name}" безвозвратно?`)) {
+                      if (window.confirm(t('trash.hardDeleteConfirm', { name: item.name }))) {
                         deletePermanent(item.id)
                       }
                     }}

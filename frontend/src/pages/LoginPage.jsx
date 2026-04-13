@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate, Link, useLocation, useNavigate } from 'react-router-dom'
 
+import { useI18n } from '@/components/app/I18nProvider'
 import AuthShell from '@/components/auth/AuthShell'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/store/auth-store'
 
 function LoginPage() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -26,26 +28,27 @@ function LoginPage() {
 
   return (
     <AuthShell
-      description="Текущий backend auth ещё не реализован полностью, поэтому экран уже построен как production-like форма, но работает через локальный store до подключения API."
-      eyebrow="Login"
+      description={t('login.description')}
+      eyebrow={t('login.eyebrow')}
       footer={
         <span>
-          Нет аккаунта? <Link className="font-medium underline underline-offset-4" to="/register">Создать</Link>
+          {t('login.noAccount')}{' '}
+          <Link className="font-medium underline underline-offset-4" to="/register">{t('login.create')}</Link>
         </span>
       }
-      title="Вход в рабочее пространство"
+      title={t('login.title')}
     >
       <Card className="border-0 bg-transparent shadow-none">
         <CardHeader className="px-0 pt-0">
-          <CardTitle className="text-3xl">{pendingTwoFactor ? 'Two-factor check' : 'Sign in'}</CardTitle>
+          <CardTitle className="text-3xl">
+            {pendingTwoFactor ? t('login.cardTitleTwoFactor') : t('login.cardTitleSignIn')}
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
           {pendingTwoFactor ? (
             <>
               <div className="rounded-lg border bg-muted/40 p-5 text-sm leading-7 text-foreground">
-                Для аккаунта <strong>{pendingTwoFactor.email}</strong> включена двухфакторная защита.
-                В демо-режиме используй TOTP-код <strong>246810</strong> или один из backup codes из
-                раздела безопасности.
+                {t('login.twoFactorIntro', { email: pendingTwoFactor.email })}
               </div>
 
               <form
@@ -58,7 +61,7 @@ function LoginPage() {
                   })
 
                   if (!result.success) {
-                    setTwoFactorError('Неверный TOTP или backup code. Попробуй ещё раз.')
+                    setTwoFactorError(t('login.totpInvalid'))
                     return
                   }
 
@@ -68,9 +71,9 @@ function LoginPage() {
               >
                 <div className="space-y-2">
                   <label className="text-sm font-medium" htmlFor="login-totp">
-                    Код подтверждения
+                    {t('login.totpLabel')}
                   </label>
-                  <Input autoFocus id="login-totp" inputMode="numeric" name="totpCode" placeholder="246810 или backup code" />
+                  <Input autoFocus id="login-totp" inputMode="numeric" name="totpCode" placeholder={t('login.totpPlaceholder')} />
                 </div>
 
                 {twoFactorError ? (
@@ -80,7 +83,7 @@ function LoginPage() {
                 ) : null}
 
                 <Button className="w-full py-6 text-base" type="submit">
-                  Подтвердить вход
+                  {t('login.confirmLogin')}
                 </Button>
               </form>
 
@@ -92,7 +95,7 @@ function LoginPage() {
                 }}
                 variant="outline"
               >
-                Вернуться к логину
+                {t('login.backToLogin')}
               </Button>
             </>
           ) : (
@@ -120,16 +123,16 @@ function LoginPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-4">
                     <label className="text-sm font-medium" htmlFor="login-password">
-                      Пароль
+                      {t('common.password')}
                     </label>
                     <Link className="text-sm underline underline-offset-4" to="/forgot-password">
-                      Забыли пароль?
+                      {t('login.forgotPassword')}
                     </Link>
                   </div>
                   <Input defaultValue="demo-password" id="login-password" name="password" type="password" />
                 </div>
                 <Button className="mt-2 w-full py-6 text-base" type="submit">
-                  Войти
+                  {t('login.signIn')}
                 </Button>
               </form>
 
@@ -144,12 +147,11 @@ function LoginPage() {
                 }}
                 variant="outline"
               >
-                Продолжить через Google
+                {t('login.continueGoogle')}
               </Button>
 
               <div className="rounded-lg border bg-muted/40 p-5 text-sm leading-7 text-foreground">
-                Демо-режим: если для аккаунта включена 2FA, после логина откроется отдельный шаг
-                подтверждения. Дальше сюда подключается `POST /api/auth/login` и TOTP challenge flow.
+                {t('login.demoHint')}
               </div>
             </>
           )}

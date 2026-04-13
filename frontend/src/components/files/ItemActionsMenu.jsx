@@ -1,9 +1,12 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { Eye, FolderOpen, MoreHorizontal, Pencil, Trash2, Workflow } from 'lucide-react'
 
+import { useI18n } from '@/components/app/I18nProvider'
 import { Button } from '@/components/ui/button'
 
 function ItemActionsMenu({ item, onMove, onOpen, onPreview, onRename, onTrash }) {
+  const { t } = useI18n()
+
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -24,7 +27,7 @@ function ItemActionsMenu({ item, onMove, onOpen, onPreview, onRename, onTrash })
               onSelect={onOpen}
             >
               <FolderOpen className="h-4 w-4 text-foreground" />
-              Открыть папку
+              {t('itemMenu.openFolder')}
             </DropdownMenu.Item>
           ) : (
             <DropdownMenu.Item
@@ -32,7 +35,7 @@ function ItemActionsMenu({ item, onMove, onOpen, onPreview, onRename, onTrash })
               onSelect={onPreview}
             >
               <Eye className="h-4 w-4 text-foreground" />
-              Открыть превью
+              {t('itemMenu.openPreview')}
             </DropdownMenu.Item>
           )}
 
@@ -41,7 +44,7 @@ function ItemActionsMenu({ item, onMove, onOpen, onPreview, onRename, onTrash })
             onSelect={onRename}
           >
             <Pencil className="h-4 w-4 text-foreground" />
-            Переименовать
+            {t('itemMenu.rename')}
           </DropdownMenu.Item>
 
           <DropdownMenu.Item
@@ -49,7 +52,7 @@ function ItemActionsMenu({ item, onMove, onOpen, onPreview, onRename, onTrash })
             onSelect={onMove}
           >
             <Workflow className="h-4 w-4 text-foreground" />
-            Переместить
+            {t('itemMenu.move')}
           </DropdownMenu.Item>
 
           <DropdownMenu.Separator className="my-2 h-px bg-border" />
@@ -59,7 +62,7 @@ function ItemActionsMenu({ item, onMove, onOpen, onPreview, onRename, onTrash })
             onSelect={onTrash}
           >
             <Trash2 className="h-4 w-4" />
-            В корзину
+            {t('itemMenu.toTrash')}
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

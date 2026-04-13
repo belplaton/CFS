@@ -1,9 +1,12 @@
 import { Cloud } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
+import { useI18n } from '@/components/app/I18nProvider'
 import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 
 function AuthShell({ eyebrow, title, description, footer, children }) {
+  const { t } = useI18n()
+
   return (
     <div className="surface-grid min-h-screen bg-background px-4 py-10 text-foreground md:px-8">
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_420px]">
@@ -14,8 +17,8 @@ function AuthShell({ eyebrow, title, description, footer, children }) {
                 <Cloud className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Cloud File Storage</p>
-                <p className="font-semibold">shadcn/ui frontend</p>
+                <p className="text-xs text-muted-foreground">{t('authShell.brandTitle')}</p>
+                <p className="font-semibold">{t('authShell.brandSubtitle')}</p>
               </div>
             </Link>
             <ThemeSwitcher compact />
@@ -27,12 +30,12 @@ function AuthShell({ eyebrow, title, description, footer, children }) {
 
           <div className="mt-10 grid gap-4 sm:grid-cols-2">
             <div className="rounded-lg border bg-muted/40 p-5">
-              <p className="text-sm text-muted-foreground">Что уже отражено в UI</p>
-              <p className="mt-3 text-lg font-medium">Роутинг, auth flow, file manager, trash, quota, security</p>
+              <p className="text-sm text-muted-foreground">{t('authShell.uiCoverageTitle')}</p>
+              <p className="mt-3 text-lg font-medium">{t('authShell.uiCoverageValue')}</p>
             </div>
             <div className="rounded-lg border bg-muted/40 p-5">
-              <p className="text-sm text-muted-foreground">Чего ждём от backend</p>
-              <p className="mt-3 text-lg font-medium">Реальные endpoints Auth/File/Preview и upload pipeline</p>
+              <p className="text-sm text-muted-foreground">{t('authShell.backendWaitingTitle')}</p>
+              <p className="mt-3 text-lg font-medium">{t('authShell.backendWaitingValue')}</p>
             </div>
           </div>
         </div>
