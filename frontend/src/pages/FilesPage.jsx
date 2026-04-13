@@ -9,6 +9,7 @@ import {
 
 import FileBrowser from '@/components/files/FileBrowser'
 import PreviewModal from '@/components/files/PreviewModal'
+import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ROOT_FOLDER_ID } from '@/data/mock-data'
@@ -44,6 +45,14 @@ function buildFolderOptions(items, excludedIds = []) {
 
   walk(ROOT_FOLDER_ID)
   return result
+}
+
+function getCurrentFolderTitle(currentFolderId, foldersById) {
+  if (currentFolderId === ROOT_FOLDER_ID) {
+    return 'My Files'
+  }
+
+  return foldersById[currentFolderId]?.name ?? 'My Files'
 }
 
 function ModalCard({ children, onClose, title }) {
@@ -85,8 +94,9 @@ function FilesPage() {
   } = useFileStore((state) => state)
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [movingItem, setMovingItem] = useState(null)
+  const [movingItems, setMovingItems] = useState([])
   const [renamingItem, setRenamingItem] = useState(null)
+  const [selectedItemIds, setSelectedItemIds] = useState([])
   const [typeFilter, setTypeFilter] = useState('all')
   const deferredSearchQuery = useDeferredValue(searchQuery)
 
@@ -95,6 +105,7 @@ function FilesPage() {
   }, [ensureSeedData])
 
   const foldersById = Object.fromEntries(items.filter((item) => item.kind === 'folder').map((item) => [item.id, item]))
+  const currentFolderTitle = getCurrentFolderTitle(currentFolderId, foldersById)
   const normalizedCurrentFolderId = currentFolderId === ROOT_FOLDER_ID ? null : currentFolderId
   const folderSizeCache = buildFolderSizeCache(items)
   const visibleItems = items
@@ -138,80 +149,83 @@ function FilesPage() {
     })
 
   const previewItem = items.find((item) => item.id === previewItemId) ?? null
-  const moveOptions = movingItem
+  const selectedItems = visibleItems.filter((item) => selectedItemIds.includes(item.id))
+  const moveOptions = movingItems.length
     ? buildFolderOptions(
         items,
-        movingItem.kind === 'folder' ? [movingItem.id, ...getDescendantIds(movingItem.id)] : [],
+        movingItems.flatMap((item) =>
+          item.kind === 'folder' ? [item.id, ...getDescendantIds(item.id)] : [item.id],
+        ),
       )
     : []
 
-  return (
-    <div className="space-y-6">
-      <section className="rounded-xl border bg-card p-5 shadow-sm">
-        <input
-          className="hidden"
-          id="file-upload-trigger"
-          multiple
-          onChange={(event) => uploadFiles(Array.from(event.target.files ?? []), currentFolderId)}
-          type="file"
-        />
+  useEffect(() => {
+    const visibleIds = new Set(visibleItems.map((item) => item.id))
+    setSelectedItemIds((previous) => {
+      const next = previous.filter((id) => visibleIds.has(id))
+      if (next.length === previous.length && next.every((id, index) => id === previous[index])) {
+        return previous
+      }
 
-        <div className="flex flex-col gap-4 border-b pb-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-3xl font-semibold tracking-tight">My Files</h1>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                onClick={() => setView('list')}
-                size="icon"
-                variant={view === 'list' ? 'default' : 'outline'}
-              >
-                <List className="h-4 w-4" />
-              </Button>
-              <Button
-                onClick={() => setView('grid')}
-                size="icon"
-                variant={view === 'grid' ? 'default' : 'outline'}
-              >
-                <Grid2X2 className="h-4 w-4" />
-              </Button>
-              <Button className="gap-2" onClick={() => setIsCreateOpen(true)} variant="outline">
-                <FolderPlus className="h-4 w-4" />
-                Папка
-              </Button>
-              <Button className="gap-2" onClick={() => document.getElementById('file-upload-trigger')?.click()}>
-                <UploadCloud className="h-4 w-4" />
-                Загрузить
-              </Button>
-            </div>
+      return next
+    })
+  }, [visibleItems])
+
+  const clearSelection = () => {
+    setSelectedItemIds([])
+  }
+
+  const moveManyToTrash = () => {
+    if (!selectedItems.length) {
+      return
+    }
+
+    if (
+      !window.confirm(
+        `Переместить ${selectedItems.length} элемент(ов) в корзину?`,
+      )
+    ) {
+      return
+    }
+
+    selectedItems.forEach((item) => moveToTrash(item.id))
+    clearSelection()
+  }
+
+  return (
+    <div className="space-y-3">
+      <input
+        className="hidden"
+        id="file-upload-trigger"
+        multiple
+        onChange={(event) => uploadFiles(Array.from(event.target.files ?? []), currentFolderId)}
+        type="file"
+      />
+
+      <div className="sticky top-0 z-30 space-y-2 border-b bg-background/95 pb-3 pt-1 backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Current folder</p>
+            <h1 className="truncate text-[2rem] font-semibold tracking-tight">{currentFolderTitle}</h1>
           </div>
 
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-            <div className="relative min-w-[260px] flex-1">
-              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="bg-background pl-11 shadow-sm"
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Поиск по текущей папке"
-                value={searchQuery}
-              />
-            </div>
-
-            <select
-              className="h-10 rounded-md border border-input bg-background px-4 text-sm shadow-sm"
-              onChange={(event) => setTypeFilter(event.target.value)}
-              value={typeFilter}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => setView('list')}
+              size="icon"
+              variant={view === 'list' ? 'default' : 'outline'}
             >
-              <option value="all">Все типы</option>
-              <option value="folders">Папки</option>
-              <option value="files">Файлы</option>
-              <option value="images">Изображения</option>
-              <option value="pdf">PDF</option>
-              <option value="documents">Документы</option>
-              <option value="archives">Архивы</option>
-            </select>
-
+              <List className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={() => setView('grid')}
+              size="icon"
+              variant={view === 'grid' ? 'default' : 'outline'}
+            >
+              <Grid2X2 className="h-4 w-4" />
+            </Button>
             <select
-              className="h-10 rounded-md border border-input bg-background px-4 text-sm shadow-sm"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
               onChange={(event) => setSortBy(event.target.value)}
               value={sortBy}
             >
@@ -222,34 +236,77 @@ function FilesPage() {
               <option value="size">По размеру</option>
               <option value="sizeAsc">По размеру (малые)</option>
             </select>
+
+            <ThemeSwitcher compact settingsMode />
           </div>
         </div>
 
-        <div className="mt-5">
-          <FileBrowser
-            canDropIntoFolder={(item, targetFolderId) => canMoveItemToParent(item.id, targetFolderId)}
-            currentFolderId={currentFolderId}
-            foldersById={foldersById}
-            items={visibleItems}
-            onDropIntoFolder={(item, targetFolderId) =>
-              moveItem({
-                id: item.id,
-                parentId: targetFolderId,
-              })}
-            onGoToFolder={(folderId) => openFolder(folderId)}
-            onMove={(item) => setMovingItem(item)}
-            onOpenFolder={(folderId) => openFolder(folderId)}
-            onPreview={(item) => openPreview(item.id)}
-            onRename={(item) => setRenamingItem(item)}
-            onTrash={(item) => {
-              if (window.confirm(`Переместить "${item.name}" в корзину?`)) {
-                moveToTrash(item.id)
-              }
-            }}
-            view={view}
-          />
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+          <div className="relative min-w-[260px] flex-1">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="h-10 bg-background pl-11 shadow-sm"
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Поиск по текущей папке"
+              value={searchQuery}
+            />
+          </div>
+
+          <select
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
+            onChange={(event) => setTypeFilter(event.target.value)}
+            value={typeFilter}
+          >
+            <option value="all">Все типы</option>
+            <option value="folders">Папки</option>
+            <option value="files">Файлы</option>
+            <option value="images">Изображения</option>
+            <option value="pdf">PDF</option>
+            <option value="documents">Документы</option>
+            <option value="archives">Архивы</option>
+          </select>
+
+          <div className="flex flex-wrap gap-2">
+            <Button className="h-10 gap-2 px-4" onClick={() => setIsCreateOpen(true)} variant="outline">
+              <FolderPlus className="h-4 w-4" />
+              Папка
+            </Button>
+            <Button className="h-10 gap-2 px-4" onClick={() => document.getElementById('file-upload-trigger')?.click()}>
+              <UploadCloud className="h-4 w-4" />
+              Загрузить
+            </Button>
+          </div>
         </div>
-      </section>
+      </div>
+
+      <FileBrowser
+        canDropIntoFolder={(item, targetFolderId) => canMoveItemToParent(item.id, targetFolderId)}
+        currentFolderId={currentFolderId}
+        foldersById={foldersById}
+        items={visibleItems}
+        onDropIntoFolder={(item, targetFolderId) =>
+          moveItem({
+            id: item.id,
+            parentId: targetFolderId,
+          })}
+        onGoToFolder={(folderId) => openFolder(folderId)}
+        onMove={(item) => setMovingItems([item])}
+        onOpenFolder={(folderId) => openFolder(folderId)}
+        onPreview={(item) => openPreview(item.id)}
+        onRename={(item) => setRenamingItem(item)}
+        onBulkMove={() => setMovingItems(selectedItems)}
+        onBulkTrash={moveManyToTrash}
+        onBulkDownload={() => window.alert('Массовое скачивание включим после подключения API архивации.')}
+        onSelectionChange={setSelectedItemIds}
+        onTrash={(item) => {
+          if (window.confirm(`Переместить "${item.name}" в корзину?`)) {
+            moveToTrash(item.id)
+          }
+        }}
+        selectedCount={selectedItems.length}
+        selectedItemIds={selectedItemIds}
+        view={view}
+      />
 
       {isCreateOpen ? (
         <ModalCard onClose={() => setIsCreateOpen(false)} title="Создать папку">
@@ -279,8 +336,11 @@ function FilesPage() {
         </ModalCard>
       ) : null}
 
-      {movingItem ? (
-        <ModalCard onClose={() => setMovingItem(null)} title="Переместить элемент">
+      {movingItems.length ? (
+        <ModalCard
+          onClose={() => setMovingItems([])}
+          title={movingItems.length > 1 ? 'Переместить элементы' : 'Переместить элемент'}
+        >
           <form
             className="space-y-4"
             onSubmit={(event) => {
@@ -288,15 +348,27 @@ function FilesPage() {
               const formData = new FormData(event.currentTarget)
               const parentId = formData.get('parentId')?.toString() ?? ROOT_FOLDER_ID
 
-              moveItem({
-                id: movingItem.id,
-                parentId,
+              movingItems.forEach((item) => {
+                moveItem({
+                  id: item.id,
+                  parentId,
+                })
               })
-              setMovingItem(null)
+
+              setMovingItems([])
+              clearSelection()
             }}
           >
             <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm text-foreground">
-              Перемещаем: <strong>{movingItem.name}</strong>
+              {movingItems.length > 1 ? (
+                <>
+                  Перемещаем элементов: <strong>{movingItems.length}</strong>
+                </>
+              ) : (
+                <>
+                  Перемещаем: <strong>{movingItems[0].name}</strong>
+                </>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -305,7 +377,7 @@ function FilesPage() {
               </label>
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                defaultValue={movingItem.parentId ?? ROOT_FOLDER_ID}
+                defaultValue={movingItems[0].parentId ?? ROOT_FOLDER_ID}
                 id="move-parent"
                 name="parentId"
               >

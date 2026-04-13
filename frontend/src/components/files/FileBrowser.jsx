@@ -9,6 +9,7 @@ import {
 
 import { formatBytes, formatDate, getFileTypeLabel } from '@/lib/utils'
 import ItemActionsMenu from '@/components/files/ItemActionsMenu'
+import { Button } from '@/components/ui/button'
 
 function getItemIcon(item) {
   if (item.kind === 'folder') {
@@ -57,13 +58,43 @@ function FileBrowser({
   onOpenFolder,
   onPreview,
   onRename,
+  onBulkMove,
+  onBulkTrash,
+  onBulkDownload,
+  onSelectionChange,
   onTrash,
+  selectedCount,
+  selectedItemIds,
   view,
 }) {
   const breadcrumbs = buildBreadcrumbs(foldersById, currentFolderId)
   const [draggedItem, setDraggedItem] = useState(null)
   const [dropTargetId, setDropTargetId] = useState(null)
-  const [selectedItemId, setSelectedItemId] = useState(null)
+  const selectedIdsSet = new Set(selectedItemIds)
+  const allSelected = items.length > 0 && items.every((item) => selectedIdsSet.has(item.id))
+  const partiallySelected = items.some((item) => selectedIdsSet.has(item.id)) && !allSelected
+
+  const setSelectionForItem = (itemId, checked) => {
+    if (checked) {
+      onSelectionChange([...selectedIdsSet, itemId])
+      return
+    }
+
+    onSelectionChange(selectedItemIds.filter((id) => id !== itemId))
+  }
+
+  const toggleSelectionForItem = (itemId) => {
+    setSelectionForItem(itemId, !selectedIdsSet.has(itemId))
+  }
+
+  const toggleAllSelection = (checked) => {
+    if (checked) {
+      onSelectionChange(items.map((item) => item.id))
+      return
+    }
+
+    onSelectionChange([])
+  }
 
   const clearDragState = () => {
     setDraggedItem(null)
@@ -98,7 +129,7 @@ function FileBrowser({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {draggedItem ? (
         <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
           Перемещение: <strong className="text-foreground">{draggedItem.name}</strong>. Перетащи
@@ -106,30 +137,32 @@ function FileBrowser({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {breadcrumbs.map((crumb, index) => (
-          <button
-            className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
-              dropTargetId === crumb.id
-                ? 'border-primary bg-primary/10 text-foreground'
-                : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
-            }`}
-            key={crumb.id}
-            onDragLeave={() => {
-              if (dropTargetId === crumb.id) {
-                setDropTargetId(null)
-              }
-            }}
-            onDragOver={(event) => handleDragOver(event, crumb.id)}
-            onDrop={(event) => handleDrop(event, crumb.id)}
-            onClick={() => onGoToFolder(crumb.id)}
-            type="button"
-          >
-            {crumb.name}
-            {index < breadcrumbs.length - 1 ? <span className="text-slate-300">/</span> : null}
-          </button>
-        ))}
-      </div>
+      {breadcrumbs.length > 1 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {breadcrumbs.map((crumb, index) => (
+            <button
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                dropTargetId === crumb.id
+                  ? 'border-primary bg-primary/10 text-foreground'
+                  : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+              key={crumb.id}
+              onDragLeave={() => {
+                if (dropTargetId === crumb.id) {
+                  setDropTargetId(null)
+                }
+              }}
+              onDragOver={(event) => handleDragOver(event, crumb.id)}
+              onDrop={(event) => handleDrop(event, crumb.id)}
+              onClick={() => onGoToFolder(crumb.id)}
+              type="button"
+            >
+              {crumb.name}
+              {index < breadcrumbs.length - 1 ? <span className="text-slate-300">/</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {items.length === 0 ? (
         <div className="rounded-xl border border-dashed bg-muted/20 px-6 py-16 text-center">
@@ -141,56 +174,93 @@ function FileBrowser({
       ) : null}
 
       {items.length > 0 && view === 'grid' ? (
-        <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-          {items.map((item) => (
-            <div
-              className={`rounded-xl border bg-background p-5 shadow-sm transition-colors hover:border-foreground/20 ${
-                dropTargetId === item.id ? 'border-primary bg-primary/5' : ''
-              }`}
-              draggable
-              key={item.id}
-              onDragEnd={clearDragState}
-              onDragLeave={() => {
-                if (dropTargetId === item.id) {
-                  setDropTargetId(null)
-                }
-              }}
-              onDragOver={item.kind === 'folder' ? (event) => handleDragOver(event, item.id) : undefined}
-              onDragStart={() => handleDragStart(item)}
-              onDrop={item.kind === 'folder' ? (event) => handleDrop(event, item.id) : undefined}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-lg border bg-muted">
-                  {getItemIcon(item)}
-                </div>
-                <ItemActionsMenu
-                  item={item}
-                  onMove={() => onMove(item)}
-                  onOpen={() => onOpenFolder(item.id)}
-                  onPreview={() => onPreview(item)}
-                  onRename={() => onRename(item)}
-                  onTrash={() => onTrash(item)}
-                />
-              </div>
+        <div className="space-y-2.5">
+          <div className="flex h-14 items-center justify-between rounded-lg border bg-background px-3">
+            <label className="inline-flex items-center gap-2 text-sm text-foreground">
+              <input
+                aria-label="Выбрать все элементы"
+                checked={allSelected}
+                className="h-4 w-4 accent-primary"
+                onChange={(event) => toggleAllSelection(event.target.checked)}
+                ref={(element) => {
+                  if (element) {
+                    element.indeterminate = partiallySelected
+                  }
+                }}
+                type="checkbox"
+              />
+              Выбрано: <strong>{selectedCount}</strong>
+            </label>
+            <div className="flex items-center gap-2">
+              <Button disabled={selectedCount === 0} onClick={onBulkMove} size="sm" variant="outline">
+                Переместить
+              </Button>
+              <Button disabled={selectedCount === 0} onClick={onBulkTrash} size="sm" variant="outline">
+                В корзину
+              </Button>
+              <Button disabled={selectedCount === 0} onClick={onBulkDownload} size="sm" variant="outline">
+                Скачать
+              </Button>
+            </div>
+          </div>
 
-              <button
-                className="mt-5 block text-left"
+          <div className="grid gap-2.5 xl:grid-cols-4 2xl:grid-cols-5">
+            {items.map((item) => (
+              <div
+                className={`relative rounded-xl border bg-background p-3 shadow-sm transition-colors hover:border-foreground/20 ${
+                  selectedIdsSet.has(item.id)
+                    ? 'border-primary/80 bg-primary/5'
+                    : dropTargetId === item.id
+                      ? 'border-primary bg-primary/5'
+                      : ''
+                }`}
+                draggable
+                key={item.id}
+                onClick={() => toggleSelectionForItem(item.id)}
                 onDoubleClick={() => {
                   item.kind === 'folder' ? onOpenFolder(item.id) : onPreview(item)
                 }}
-                onClick={() => setSelectedItemId(item.id)}
-                type="button"
+                onDragEnd={clearDragState}
+                onDragLeave={() => {
+                  if (dropTargetId === item.id) {
+                    setDropTargetId(null)
+                  }
+                }}
+                onDragOver={item.kind === 'folder' ? (event) => handleDragOver(event, item.id) : undefined}
+                onDragStart={() => handleDragStart(item)}
+                onDrop={item.kind === 'folder' ? (event) => handleDrop(event, item.id) : undefined}
               >
-                <p className="text-lg font-semibold">{item.name}</p>
-                <p className="mt-2 text-sm text-muted-foreground">{getFileTypeLabel(item)}</p>
-              </button>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border bg-muted">
+                    {getItemIcon(item)}
+                  </div>
+                  <div
+                    onClick={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                  >
+                    <ItemActionsMenu
+                      item={item}
+                      onMove={() => onMove(item)}
+                      onOpen={() => onOpenFolder(item.id)}
+                      onPreview={() => onPreview(item)}
+                      onRename={() => onRename(item)}
+                      onTrash={() => onTrash(item)}
+                    />
+                  </div>
+                </div>
 
-              <div className="mt-5 flex items-center justify-between text-sm text-muted-foreground">
-                <span>{item.kind === 'file' ? formatBytes(item.size) : formatBytes(item.cachedSize ?? 0)}</span>
-                <span>{formatDate(item.updatedAt)}</span>
+                <div className="mt-3 block w-full text-left">
+                  <p className="truncate text-base font-semibold leading-tight">{item.name}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{getFileTypeLabel(item)}</p>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
+                  <span>{item.kind === 'file' ? formatBytes(item.size) : formatBytes(item.cachedSize ?? 0)}</span>
+                  <span>{formatDate(item.updatedAt)}</span>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -198,18 +268,53 @@ function FileBrowser({
         <div className="overflow-hidden rounded-lg border bg-background">
           <div className="max-h-[74vh] overflow-auto">
             <div className="min-w-[980px]">
-              <div className="sticky top-0 z-10 grid grid-cols-[36px_minmax(0,2.8fr)_160px_190px_120px_72px] gap-4 border-b bg-background/95 px-4 py-3 text-xs uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
-                <span />
-                <span>Название</span>
-                <span>Владелец</span>
-                <span>Изменён</span>
-                <span>Размер</span>
-                <span className="text-right">Действия</span>
+              <div className="sticky top-0 z-20 grid h-14 grid-cols-[36px_minmax(0,2.8fr)_160px_190px_120px_72px] items-center gap-4 border-b bg-background/95 px-4 backdrop-blur">
+                <span className="flex h-4 items-center">
+                  <input
+                    aria-label="Выбрать все элементы"
+                    checked={allSelected}
+                    className="h-4 w-4 accent-primary"
+                    onChange={(event) => toggleAllSelection(event.target.checked)}
+                    ref={(element) => {
+                      if (element) {
+                        element.indeterminate = partiallySelected
+                      }
+                    }}
+                    type="checkbox"
+                  />
+                </span>
+
+                {selectedCount > 0 ? (
+                  <>
+                    <span className="col-span-2 truncate text-sm leading-none text-foreground">
+                      Выбрано элементов: <strong>{selectedCount}</strong>
+                    </span>
+                    <div className="col-span-3 flex items-center justify-end gap-2 whitespace-nowrap">
+                      <Button onClick={onBulkMove} size="sm" variant="outline">
+                        Переместить
+                      </Button>
+                      <Button onClick={onBulkTrash} size="sm" variant="outline">
+                        В корзину
+                      </Button>
+                      <Button onClick={onBulkDownload} size="sm" variant="outline">
+                        Скачать
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">Название</span>
+                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">Владелец</span>
+                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">Изменён</span>
+                    <span className="text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">Размер</span>
+                    <span className="text-right text-xs uppercase leading-none tracking-[0.18em] text-muted-foreground">Действия</span>
+                  </>
+                )}
               </div>
               {items.map((item) => (
                 <div
-                  className={`grid grid-cols-[36px_minmax(0,2.8fr)_160px_190px_120px_72px] gap-4 border-b px-4 py-2 last:border-b-0 ${
-                    selectedItemId === item.id
+                  className={`grid grid-cols-[36px_minmax(0,2.8fr)_160px_190px_120px_72px] gap-4 border-b px-4 py-2.5 last:border-b-0 ${
+                    selectedIdsSet.has(item.id)
                       ? 'bg-muted/50'
                       : dropTargetId === item.id
                         ? 'bg-primary/5'
@@ -228,10 +333,12 @@ function FileBrowser({
                   onDrop={item.kind === 'folder' ? (event) => handleDrop(event, item.id) : undefined}
                 >
                   <div className="flex items-center">
-                    <div
-                      className={`h-4 w-4 rounded-sm border transition-colors ${
-                        selectedItemId === item.id ? 'border-primary bg-primary' : 'border-border bg-background'
-                      }`}
+                    <input
+                      aria-label={`Выбрать ${item.name}`}
+                      checked={selectedIdsSet.has(item.id)}
+                      className="h-4 w-4 accent-primary"
+                      onChange={(event) => setSelectionForItem(item.id, event.target.checked)}
+                      type="checkbox"
                     />
                   </div>
                   <button
@@ -239,10 +346,10 @@ function FileBrowser({
                     onDoubleClick={() => {
                       item.kind === 'folder' ? onOpenFolder(item.id) : onPreview(item)
                     }}
-                    onClick={() => setSelectedItemId(item.id)}
+                    onClick={() => toggleSelectionForItem(item.id)}
                     type="button"
                   >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted">
                       {getItemIcon(item)}
                     </div>
                     <div className="min-w-0">

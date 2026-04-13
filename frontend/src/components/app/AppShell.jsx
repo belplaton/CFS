@@ -1,7 +1,6 @@
 import { Cloud, HardDrive, LogOut, ShieldCheck, Trash2 } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
-import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatBytes } from '@/lib/utils'
@@ -113,21 +112,6 @@ function AppShell() {
         </aside>
 
         <div className="flex min-h-[calc(100vh-2rem)] flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
-          <header className="flex items-center justify-between gap-3 border-b bg-card px-5 py-4 md:px-6">
-            <div className="flex items-center gap-3 lg:hidden">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border bg-muted">
-                <Cloud className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Cloud Storage</p>
-                <p className="font-semibold">Workspace</p>
-              </div>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <ThemeSwitcher compact settingsMode />
-            </div>
-          </header>
-
           <main className="flex-1 overflow-y-auto px-5 py-5 md:px-6 md:py-6">
             <Outlet />
           </main>
