@@ -24,6 +24,7 @@
     --input: 0 0% 84%;
     --ring: 0 0% 63.9%;
     --radius: 0.625rem;
+    --grid-line: 220 14% 10% / 0.04;
   }
 
   .dark {
@@ -46,6 +47,30 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 0 0% 83.1%;
+    --grid-line: 210 40% 98% / 0.06;
+  }
+
+  .theme-midnight {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 222 38% 14%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 38% 14%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 208 100% 66%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 222 31% 19%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 221 31% 18%;
+    --muted-foreground: 215 20% 74%;
+    --accent: 217 43% 20%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 73% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 28% 24%;
+    --input: 217 28% 24%;
+    --ring: 208 100% 66%;
+    --grid-line: 208 100% 66% / 0.08;
   }
 }
 
@@ -56,6 +81,10 @@
 
   html {
     scroll-behavior: smooth;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
@@ -83,8 +112,8 @@
 
   .surface-grid {
     background-image:
-      linear-gradient(to right, rgba(0, 0, 0, 0.025) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(0, 0, 0, 0.025) 1px, transparent 1px);
+      linear-gradient(to right, hsl(var(--grid-line)) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--grid-line)) 1px, transparent 1px);
     background-size: 32px 32px;
   }
 }

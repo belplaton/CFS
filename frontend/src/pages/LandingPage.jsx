@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
+import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/store/auth-store'
 
@@ -42,6 +43,7 @@ function LandingPage() {
             <h1 className="mt-2 text-2xl font-semibold md:text-3xl">Frontend delivery workspace</h1>
           </div>
           <div className="flex flex-wrap gap-3">
+            <ThemeSwitcher compact />
             <Button asChild className="px-5" variant="ghost">
               <Link to="/login">Войти</Link>
             </Button>

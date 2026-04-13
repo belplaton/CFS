@@ -1,6 +1,7 @@
 import { Cloud, HardDrive, LogOut, ShieldCheck, Trash2 } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
+import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 import { Button } from '@/components/ui/button'
 import { cn, getInitials } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth-store'
@@ -101,6 +102,7 @@ function AppShell() {
               <div className="rounded-md border bg-muted px-3 py-1.5 text-sm text-muted-foreground">
                 Mock mode для UI-интеграции до готовности API
               </div>
+              <ThemeSwitcher compact />
               <div className="hidden rounded-md border bg-card px-3 py-1.5 text-sm text-muted-foreground md:block">
                 {user?.email}
               </div>
