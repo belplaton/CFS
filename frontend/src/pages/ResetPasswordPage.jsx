@@ -15,7 +15,7 @@ function ResetPasswordPage() {
       eyebrow="New Password"
       footer={
         <span>
-          Вернуться ко входу? <Link className="font-medium text-sky-700" to="/login">Открыть login</Link>
+          Вернуться ко входу? <Link className="font-medium underline underline-offset-4" to="/login">Открыть login</Link>
         </span>
       }
       title="Установка нового пароля"
@@ -25,7 +25,7 @@ function ResetPasswordPage() {
           <CardTitle className="text-3xl">Reset password</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
-          <div className="rounded-[28px] border border-amber-100 bg-amber-50 p-5 text-sm leading-7 text-amber-950">
+          <div className="rounded-lg border bg-muted/40 p-5 text-sm leading-7 text-foreground">
             В демо-режиме письмо имитируется переходом на эту страницу для <strong>{email}</strong>.
           </div>
           <form className="space-y-4">
@@ -41,7 +41,7 @@ function ResetPasswordPage() {
               </label>
               <Input id="repeat-password" name="passwordRepeat" placeholder="Повторите новый пароль" type="password" />
             </div>
-            <Button asChild className="w-full rounded-full py-6 text-base">
+            <Button asChild className="w-full py-6 text-base">
               <Link to="/login">Сохранить и вернуться ко входу</Link>
             </Button>
           </form>

@@ -18,7 +18,7 @@ function VerifyEmailPage() {
       eyebrow="Email Verification"
       footer={
         <span>
-          Уже подтвердили почту? <Link className="font-medium text-sky-700" to="/login">Перейти ко входу</Link>
+          Уже подтвердили почту? <Link className="font-medium underline underline-offset-4" to="/login">Перейти ко входу</Link>
         </span>
       }
       title="Подтверждение email"
@@ -28,12 +28,12 @@ function VerifyEmailPage() {
           <CardTitle className="text-3xl">Verify account</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
-          <div className="rounded-[28px] border border-sky-100 bg-sky-50 p-5 text-sm leading-7 text-sky-950">
+          <div className="rounded-lg border bg-muted/40 p-5 text-sm leading-7 text-foreground">
             Проверочное письмо направлено на <strong>{email}</strong>. В демо-режиме подтверждение
             имитируется кнопкой ниже.
           </div>
           <Button
-            className="w-full rounded-full py-6 text-base"
+            className="w-full py-6 text-base"
             onClick={() => {
               verifyEmail()
               navigate('/login')
@@ -41,7 +41,7 @@ function VerifyEmailPage() {
           >
             Подтвердить email
           </Button>
-          <Button className="w-full rounded-full py-6 text-base" variant="outline">
+          <Button className="w-full py-6 text-base" variant="outline">
             Отправить письмо повторно
           </Button>
         </CardContent>

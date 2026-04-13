@@ -10,18 +10,18 @@ function TrashPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-[0_15px_40px_rgba(148,163,184,0.12)] md:p-8">
+      <section className="rounded-xl border bg-card p-6 shadow-sm md:p-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-rose-700">Trash</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Trash</p>
             <h1 className="mt-3 text-3xl font-semibold">Корзина</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
               Отдельная страница корзины закрывает спринт 5 по roadmap. Восстановление и
               безвозвратное удаление уже отрисованы на уровне интерфейса и store.
             </p>
           </div>
           <Button
-            className="gap-2 rounded-full"
+            className="gap-2"
             onClick={() => {
               if (window.confirm('Очистить корзину полностью?')) {
                 emptyTrash()
@@ -35,10 +35,10 @@ function TrashPage() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_15px_40px_rgba(148,163,184,0.12)]">
+      <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="overflow-x-auto">
           <div className="min-w-[820px]">
-            <div className="grid grid-cols-[minmax(0,1.8fr)_140px_150px_170px] gap-4 border-b border-slate-200 px-6 py-4 text-xs uppercase tracking-[0.25em] text-slate-500">
+            <div className="grid grid-cols-[minmax(0,1.8fr)_140px_150px_170px] gap-4 border-b bg-muted/40 px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted-foreground">
               <span>Название</span>
               <span>Тип</span>
               <span>Удалено</span>
@@ -48,7 +48,7 @@ function TrashPage() {
             {trashItems.length === 0 ? (
               <div className="px-6 py-16 text-center">
                 <p className="text-2xl font-semibold">Корзина пуста</p>
-                <p className="mt-3 text-sm leading-7 text-slate-600">
+                <p className="mt-3 text-sm leading-7 text-muted-foreground">
                   Когда появятся soft-delete endpoint-ы backend, эта страница будет получать данные из API.
                 </p>
               </div>
@@ -56,23 +56,22 @@ function TrashPage() {
 
             {trashItems.map((item) => (
               <div
-                className="grid grid-cols-[minmax(0,1.8fr)_140px_150px_170px] gap-4 border-b border-slate-100 px-6 py-4 last:border-b-0"
+                className="grid grid-cols-[minmax(0,1.8fr)_140px_150px_170px] gap-4 border-b px-6 py-4 last:border-b-0 hover:bg-muted/20"
                 key={item.id}
               >
                 <div className="min-w-0">
                   <p className="truncate font-medium">{item.name}</p>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-muted-foreground">
                     {item.size ? formatBytes(item.size) : 'Folder'}
                   </p>
                 </div>
-                <span className="self-center text-sm text-slate-600">{getFileTypeLabel(item)}</span>
-                <span className="self-center text-sm text-slate-600">{formatDate(item.deletedAt)}</span>
+                <span className="self-center text-sm text-muted-foreground">{getFileTypeLabel(item)}</span>
+                <span className="self-center text-sm text-muted-foreground">{formatDate(item.deletedAt)}</span>
                 <div className="flex items-center justify-end gap-2">
-                  <Button className="rounded-full" onClick={() => restoreItem(item.id)} size="icon" variant="outline">
+                  <Button onClick={() => restoreItem(item.id)} size="icon" variant="outline">
                     <RotateCcw className="h-4 w-4" />
                   </Button>
                   <Button
-                    className="rounded-full text-rose-600"
                     onClick={() => {
                       if (window.confirm(`Удалить "${item.name}" безвозвратно?`)) {
                         deletePermanent(item.id)

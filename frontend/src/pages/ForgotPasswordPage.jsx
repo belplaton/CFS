@@ -14,7 +14,7 @@ function ForgotPasswordPage() {
       eyebrow="Password Reset"
       footer={
         <span>
-          Вспомнили пароль? <Link className="font-medium text-sky-700" to="/login">Назад ко входу</Link>
+          Вспомнили пароль? <Link className="font-medium underline underline-offset-4" to="/login">Назад ко входу</Link>
         </span>
       }
       title="Запрос на сброс пароля"
@@ -39,7 +39,7 @@ function ForgotPasswordPage() {
               </label>
               <Input id="forgot-email" name="email" placeholder="name@cloudstorage.dev" type="email" />
             </div>
-            <Button className="w-full rounded-full py-6 text-base" type="submit">
+            <Button className="w-full py-6 text-base" type="submit">
               Отправить ссылку
             </Button>
           </form>

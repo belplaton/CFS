@@ -25,7 +25,7 @@ function LoginPage() {
       eyebrow="Login"
       footer={
         <span>
-          Нет аккаунта? <Link className="font-medium text-sky-700" to="/register">Создать</Link>
+          Нет аккаунта? <Link className="font-medium underline underline-offset-4" to="/register">Создать</Link>
         </span>
       }
       title="Вход в рабочее пространство"
@@ -57,19 +57,19 @@ function LoginPage() {
                 <label className="text-sm font-medium" htmlFor="login-password">
                   Пароль
                 </label>
-                <Link className="text-sm text-sky-700" to="/forgot-password">
+                <Link className="text-sm underline underline-offset-4" to="/forgot-password">
                   Забыли пароль?
                 </Link>
               </div>
               <Input defaultValue="demo-password" id="login-password" name="password" type="password" />
             </div>
-            <Button className="mt-2 w-full rounded-full py-6 text-base" type="submit">
+            <Button className="mt-2 w-full py-6 text-base" type="submit">
               Войти
             </Button>
           </form>
 
           <Button
-            className="w-full rounded-full py-6 text-base"
+            className="w-full py-6 text-base"
             onClick={() => {
               loginWithGoogle()
               navigate(from, { replace: true })
@@ -79,7 +79,7 @@ function LoginPage() {
             Продолжить через Google
           </Button>
 
-          <div className="rounded-[28px] border border-sky-100 bg-sky-50 p-5 text-sm leading-7 text-sky-950">
+          <div className="rounded-lg border bg-muted/40 p-5 text-sm leading-7 text-foreground">
             Демо-режим: форма сразу открывает SPA после входа. Дальше сюда подключается
             `POST /api/auth/login` и refresh token flow.
           </div>

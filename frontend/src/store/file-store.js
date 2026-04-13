@@ -98,6 +98,18 @@ export const useFileStore = create(
               : item,
           ),
         })),
+      moveItem: ({ id, parentId }) =>
+        set((state) => ({
+          items: state.items.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  parentId: parentId === ROOT_FOLDER_ID ? null : parentId,
+                  updatedAt: new Date().toISOString(),
+                }
+              : item,
+          ),
+        })),
       moveToTrash: (id) =>
         set((state) => {
           const ids = [id, ...collectDescendantIds(state.items, id)]
@@ -172,3 +184,7 @@ export function getUsedBytes() {
   return calculateUsedBytes(useFileStore.getState().items)
 }
 
+export function getDescendantIds(itemId) {
+  const items = useFileStore.getState().items
+  return collectDescendantIds(items, itemId)
+}

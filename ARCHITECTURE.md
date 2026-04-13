@@ -249,12 +249,23 @@ CloudFileStorage/
 | Компонент | Технология |
 |-----------|------------|
 | Фреймворк | React 18 + Vite |
-| UI библиотека | Material UI (MUI) |
+| UI библиотека | shadcn/ui (Radix UI + Tailwind CSS) |
 | State management | Zustand (легче Redux) |
 | HTTP клиент | Axios или TanStack Query |
 | Роутинг | React Router v6 |
 | Формы | React Hook Form + Zod |
 | Тесты | Vitest + React Testing Library |
+
+### Frontend Design Rules
+- Frontend использует визуальный язык **shadcn/ui** с ориентацией на референс `ui.shadcn.com`
+- Базовый стиль проекта: **`new-york`**
+- Базовая палитра: **`neutral`**
+- Темизация строится на semantic CSS variables (`background`, `foreground`, `card`, `muted`, `primary` и т.д.)
+- Новые страницы и компоненты должны визуально продолжать существующие shadcn patterns: спокойные surfaces, читаемые card layers, заметные borders, умеренные shadows, простая типографика
+- Каждый экран должен иметь явную визуальную иерархию: primary working area, secondary context, вспомогательные actions и предсказуемые interaction states
+- Основной критерий качества интерфейса: пользователь за 2-3 секунды понимает, где находится главный фокус и какое действие доступно первым
+- Недопустима смесь нескольких визуальных систем внутри одного рабочего сценария; frontend должен оставаться целостным shadcn/ui-first интерфейсом
+- Источник конфигурации для фронтенда: `frontend/components.json`
 
 ### Инфраструктура
 | Компонент | Технология |

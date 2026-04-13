@@ -16,7 +16,7 @@ function RegisterPage() {
       eyebrow="Register"
       footer={
         <span>
-          Уже есть аккаунт? <Link className="font-medium text-sky-700" to="/login">Войти</Link>
+          Уже есть аккаунт? <Link className="font-medium underline underline-offset-4" to="/login">Войти</Link>
         </span>
       }
       title="Создание аккаунта"
@@ -59,7 +59,7 @@ function RegisterPage() {
               </label>
               <Input id="register-password" name="password" placeholder="Минимум 8 символов" type="password" />
             </div>
-            <Button className="w-full rounded-full py-6 text-base" type="submit">
+            <Button className="w-full py-6 text-base" type="submit">
               Зарегистрироваться
             </Button>
           </form>
