@@ -1,26 +1,19 @@
 import { useDeferredValue, useEffect, useState } from 'react'
 import {
   FolderPlus,
-  FolderTree,
   Grid2X2,
   List,
   Search,
-  Sparkles,
-  Trash2,
   UploadCloud,
 } from 'lucide-react'
 
 import FileBrowser from '@/components/files/FileBrowser'
 import PreviewModal from '@/components/files/PreviewModal'
-import QuotaCard from '@/components/files/QuotaCard'
-import UploadDropzone from '@/components/files/UploadDropzone'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { ROOT_FOLDER_ID } from '@/data/mock-data'
-import { formatBytes } from '@/lib/utils'
-import { useAuthStore } from '@/store/auth-store'
-import { canMoveItemToParent, getDescendantIds, getUsedBytes, useFileStore } from '@/store/file-store'
+import { buildFolderSizeCache, getItemEffectiveSize, matchesTypeFilter } from '@/lib/file-metrics'
+import { canMoveItemToParent, getDescendantIds, useFileStore } from '@/store/file-store'
 
 function buildFolderOptions(items, excludedIds = []) {
   const excluded = new Set(excludedIds)
@@ -70,7 +63,6 @@ function ModalCard({ children, onClose, title }) {
 }
 
 function FilesPage() {
-  const user = useAuthStore((state) => state.user)
   const {
     closePreview,
     createFolder,
@@ -95,6 +87,7 @@ function FilesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [movingItem, setMovingItem] = useState(null)
   const [renamingItem, setRenamingItem] = useState(null)
+  const [typeFilter, setTypeFilter] = useState('all')
   const deferredSearchQuery = useDeferredValue(searchQuery)
 
   useEffect(() => {
@@ -103,6 +96,7 @@ function FilesPage() {
 
   const foldersById = Object.fromEntries(items.filter((item) => item.kind === 'folder').map((item) => [item.id, item]))
   const normalizedCurrentFolderId = currentFolderId === ROOT_FOLDER_ID ? null : currentFolderId
+  const folderSizeCache = buildFolderSizeCache(items)
   const visibleItems = items
     .filter((item) => !item.deletedAt && item.parentId === normalizedCurrentFolderId)
     .filter((item) =>
@@ -110,6 +104,11 @@ function FilesPage() {
         ? item.name.toLowerCase().includes(deferredSearchQuery.toLowerCase())
         : true,
     )
+    .filter((item) => matchesTypeFilter(item, typeFilter))
+    .map((item) => ({
+      ...item,
+      cachedSize: getItemEffectiveSize(item, folderSizeCache),
+    }))
     .sort((left, right) => {
       if (left.kind !== right.kind) {
         return left.kind === 'folder' ? -1 : 1
@@ -119,18 +118,26 @@ function FilesPage() {
         return left.name.localeCompare(right.name, 'ru')
       }
 
+      if (sortBy === 'nameDesc') {
+        return right.name.localeCompare(left.name, 'ru')
+      }
+
       if (sortBy === 'size') {
-        return (right.size ?? 0) - (left.size ?? 0)
+        return (right.cachedSize ?? 0) - (left.cachedSize ?? 0)
+      }
+
+      if (sortBy === 'sizeAsc') {
+        return (left.cachedSize ?? 0) - (right.cachedSize ?? 0)
+      }
+
+      if (sortBy === 'updatedAtAsc') {
+        return new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime()
       }
 
       return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
     })
 
   const previewItem = items.find((item) => item.id === previewItemId) ?? null
-  const usedBytes = getUsedBytes()
-  const trashCount = items.filter((item) => item.deletedAt).length
-  const folderCount = items.filter((item) => item.kind === 'folder' && !item.deletedAt).length
-  const fileCount = items.filter((item) => item.kind === 'file' && !item.deletedAt).length
   const moveOptions = movingItem
     ? buildFolderOptions(
         items,
@@ -138,217 +145,109 @@ function FilesPage() {
       )
     : []
 
-  const overviewCards = [
-    {
-      id: 'folders',
-      icon: FolderTree,
-      label: 'Структура папок',
-      value: folderCount,
-      description: 'активных папок',
-    },
-    {
-      id: 'files',
-      icon: UploadCloud,
-      label: 'Контент',
-      value: fileCount,
-      description: 'активных файлов',
-    },
-    {
-      id: 'trash',
-      icon: Trash2,
-      label: 'Корзина',
-      value: trashCount,
-      description: 'элементов ожидают решения',
-    },
-  ]
-
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border bg-card p-6 shadow-sm">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-md border bg-muted px-3 py-1.5 text-sm text-muted-foreground">
-              <Sparkles className="h-4 w-4" />
-              Workspace explorer
-            </div>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight">Файлы и папки</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-              Основной режим работы теперь смещён в таблицу: быстрее сканировать список, видеть даты,
-              размеры и работать с длинными наборами файлов.
-            </p>
-          </div>
+      <section className="rounded-xl border bg-card p-5 shadow-sm">
+        <input
+          className="hidden"
+          id="file-upload-trigger"
+          multiple
+          onChange={(event) => uploadFiles(Array.from(event.target.files ?? []), currentFolderId)}
+          type="file"
+        />
 
-          <div className="flex flex-wrap gap-3">
-            <Button className="gap-2" onClick={() => setIsCreateOpen(true)}>
-              <FolderPlus className="h-4 w-4" />
-              Создать папку
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="grid gap-4 md:grid-cols-3">
-          {overviewCards.map((card) => {
-            const Icon = card.icon
-
-            return (
-              <Card className="border bg-card shadow-sm" key={card.id}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{card.label}</p>
-                    <CardTitle className="mt-2 text-2xl font-semibold">{card.value}</CardTitle>
-                  </div>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg border bg-muted">
-                    <Icon className="h-5 w-5 text-foreground" />
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 text-sm text-muted-foreground">{card.description}</CardContent>
-              </Card>
-            )
-          })}
-        </div>
-
-        <div className="rounded-xl border bg-card p-5 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Current mode</p>
-          <p className="mt-3 text-lg font-semibold">Table-first explorer</p>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Основной сценарий смещён в list view. Grid остаётся как альтернативный обзорный режим.
-          </p>
-        </div>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.75fr)_340px]">
-        <div className="rounded-xl border bg-card p-6 shadow-sm md:p-8">
-          <div className="border-b pb-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div className="max-w-2xl">
-                <div className="inline-flex items-center gap-2 rounded-md border bg-muted px-3 py-1.5 text-sm text-muted-foreground">
-                  <Sparkles className="h-4 w-4" />
-                  Explorer focus
-                </div>
-                <h2 className="mt-4 text-2xl font-semibold tracking-tight">Файлы и папки</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Табличный режим даёт лучший обзор длинного списка: видно имя, тип, дату изменения,
-                  размер и действия в пределах одной рабочей области.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  onClick={() => setView('grid')}
-                  size="icon"
-                  variant={view === 'grid' ? 'default' : 'outline'}
-                >
-                  <Grid2X2 className="h-4 w-4" />
-                </Button>
-                <Button
-                  onClick={() => setView('list')}
-                  size="icon"
-                  variant={view === 'list' ? 'default' : 'outline'}
-                >
-                  <List className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-col gap-3 xl:flex-row xl:items-center">
-              <div className="relative min-w-[260px] flex-1">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="bg-background pl-11 shadow-sm"
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Поиск по текущей папке"
-                  value={searchQuery}
-                />
-              </div>
-
-              <select
-                className="h-10 rounded-md border border-input bg-background px-4 text-sm shadow-sm"
-                onChange={(event) => setSortBy(event.target.value)}
-                value={sortBy}
+        <div className="flex flex-col gap-4 border-b pb-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight">My Files</h1>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => setView('list')}
+                size="icon"
+                variant={view === 'list' ? 'default' : 'outline'}
               >
-                <option value="updatedAt">Сначала новые</option>
-                <option value="name">По имени</option>
-                <option value="size">По размеру</option>
-              </select>
+                <List className="h-4 w-4" />
+              </Button>
+              <Button
+                onClick={() => setView('grid')}
+                size="icon"
+                variant={view === 'grid' ? 'default' : 'outline'}
+              >
+                <Grid2X2 className="h-4 w-4" />
+              </Button>
+              <Button className="gap-2" onClick={() => setIsCreateOpen(true)} variant="outline">
+                <FolderPlus className="h-4 w-4" />
+                Папка
+              </Button>
+              <Button className="gap-2" onClick={() => document.getElementById('file-upload-trigger')?.click()}>
+                <UploadCloud className="h-4 w-4" />
+                Загрузить
+              </Button>
             </div>
           </div>
 
-          <div className="mt-4 rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-            Double click по папке открывает её. Одиночный клик даёт фокус по строке, drag & drop
-            переносит элементы на папки и в breadcrumbs.
-          </div>
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+            <div className="relative min-w-[260px] flex-1">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="bg-background pl-11 shadow-sm"
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Поиск по текущей папке"
+                value={searchQuery}
+              />
+            </div>
 
-          <div className="mt-6">
-            <FileBrowser
-              canDropIntoFolder={(item, targetFolderId) => canMoveItemToParent(item.id, targetFolderId)}
-              currentFolderId={currentFolderId}
-              foldersById={foldersById}
-              items={visibleItems}
-              onDropIntoFolder={(item, targetFolderId) =>
-                moveItem({
-                  id: item.id,
-                  parentId: targetFolderId,
-                })}
-              onGoToFolder={(folderId) => openFolder(folderId)}
-              onMove={(item) => setMovingItem(item)}
-              onOpenFolder={(folderId) => openFolder(folderId)}
-              onPreview={(item) => openPreview(item.id)}
-              onRename={(item) => setRenamingItem(item)}
-              onTrash={(item) => {
-                if (window.confirm(`Переместить "${item.name}" в корзину?`)) {
-                  moveToTrash(item.id)
-                }
-              }}
-              view={view}
-            />
+            <select
+              className="h-10 rounded-md border border-input bg-background px-4 text-sm shadow-sm"
+              onChange={(event) => setTypeFilter(event.target.value)}
+              value={typeFilter}
+            >
+              <option value="all">Все типы</option>
+              <option value="folders">Папки</option>
+              <option value="files">Файлы</option>
+              <option value="images">Изображения</option>
+              <option value="pdf">PDF</option>
+              <option value="documents">Документы</option>
+              <option value="archives">Архивы</option>
+            </select>
+
+            <select
+              className="h-10 rounded-md border border-input bg-background px-4 text-sm shadow-sm"
+              onChange={(event) => setSortBy(event.target.value)}
+              value={sortBy}
+            >
+              <option value="updatedAt">Сначала новые</option>
+              <option value="updatedAtAsc">Сначала старые</option>
+              <option value="name">По имени</option>
+              <option value="nameDesc">По имени (Z-A)</option>
+              <option value="size">По размеру</option>
+              <option value="sizeAsc">По размеру (малые)</option>
+            </select>
           </div>
         </div>
 
-        <div className="space-y-4">
-          <QuotaCard plan={user?.plan ?? 'Free'} quotaBytes={user?.quotaBytes ?? 1} usedBytes={usedBytes} />
-
-          <div className="rounded-xl border bg-card p-6 shadow-sm">
-            <div className="mb-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Quick actions</p>
-              <h2 className="mt-3 text-xl font-semibold">Загрузка и структура</h2>
-            </div>
-
-            <UploadDropzone
-              compact
-              onCreateFolder={() => setIsCreateOpen(true)}
-              onFilesSelected={(files) => uploadFiles(files, currentFolderId)}
-            />
-          </div>
-
-          <div className="rounded-xl border bg-card p-6 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Why this mode</p>
-            <h2 className="mt-3 text-xl font-semibold">Почему таблица удобнее</h2>
-
-            <div className="mt-5 space-y-4">
-              <div className="rounded-lg border bg-muted/40 p-4">
-                <p className="text-sm font-medium">Быстрее сканировать</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  На одном экране видно больше элементов и проще сравнивать файлы по дате, типу и размеру.
-                </p>
-              </div>
-
-              <div className="rounded-lg border bg-muted/40 p-4">
-                <p className="text-sm font-medium">Проще работать с длинными списками</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Sticky header и единый list rhythm лучше подходят для рабочего хранилища, чем крупные плитки.
-                </p>
-              </div>
-
-              <div className="rounded-lg border bg-muted/40 p-4">
-                <p className="text-sm font-medium">Следующий шаг</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Дальше сюда логично добавлять multi-select, bulk actions и ещё более плотную файловую навигацию.
-                </p>
-              </div>
-            </div>
-          </div>
+        <div className="mt-5">
+          <FileBrowser
+            canDropIntoFolder={(item, targetFolderId) => canMoveItemToParent(item.id, targetFolderId)}
+            currentFolderId={currentFolderId}
+            foldersById={foldersById}
+            items={visibleItems}
+            onDropIntoFolder={(item, targetFolderId) =>
+              moveItem({
+                id: item.id,
+                parentId: targetFolderId,
+              })}
+            onGoToFolder={(folderId) => openFolder(folderId)}
+            onMove={(item) => setMovingItem(item)}
+            onOpenFolder={(folderId) => openFolder(folderId)}
+            onPreview={(item) => openPreview(item.id)}
+            onRename={(item) => setRenamingItem(item)}
+            onTrash={(item) => {
+              if (window.confirm(`Переместить "${item.name}" в корзину?`)) {
+                moveToTrash(item.id)
+              }
+            }}
+            view={view}
+          />
         </div>
       </section>
 

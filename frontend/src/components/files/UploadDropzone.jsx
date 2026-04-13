@@ -58,6 +58,7 @@ function UploadDropzone({ compact = false, onCreateFolder, onFilesSelected }) {
 
         <div className={cn('flex gap-3', compact ? 'flex-col' : 'flex-wrap')}>
           <input
+            id="file-upload-trigger"
             className="hidden"
             multiple
             onChange={(event) => handleFiles(event.target.files)}

@@ -186,7 +186,7 @@ function FileBrowser({
               </button>
 
               <div className="mt-5 flex items-center justify-between text-sm text-muted-foreground">
-                <span>{item.kind === 'file' ? formatBytes(item.size) : 'Folder'}</span>
+                <span>{item.kind === 'file' ? formatBytes(item.size) : formatBytes(item.cachedSize ?? 0)}</span>
                 <span>{formatDate(item.updatedAt)}</span>
               </div>
             </div>
@@ -195,20 +195,20 @@ function FileBrowser({
       ) : null}
 
       {items.length > 0 && view === 'list' ? (
-        <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
-          <div className="max-h-[72vh] overflow-auto">
-            <div className="min-w-[860px]">
-              <div className="sticky top-0 z-10 grid grid-cols-[36px_minmax(0,2.4fr)_160px_170px_120px_100px] gap-4 border-b bg-background/95 px-6 py-4 text-xs uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
+        <div className="overflow-hidden rounded-lg border bg-background">
+          <div className="max-h-[74vh] overflow-auto">
+            <div className="min-w-[980px]">
+              <div className="sticky top-0 z-10 grid grid-cols-[36px_minmax(0,2.8fr)_160px_190px_120px_72px] gap-4 border-b bg-background/95 px-4 py-3 text-xs uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
                 <span />
                 <span>Название</span>
-                <span>Тип</span>
+                <span>Владелец</span>
                 <span>Изменён</span>
                 <span>Размер</span>
                 <span className="text-right">Действия</span>
               </div>
               {items.map((item) => (
                 <div
-                  className={`grid grid-cols-[36px_minmax(0,2.4fr)_160px_170px_120px_100px] gap-4 border-b px-6 py-3.5 last:border-b-0 ${
+                  className={`grid grid-cols-[36px_minmax(0,2.8fr)_160px_190px_120px_72px] gap-4 border-b px-4 py-2 last:border-b-0 ${
                     selectedItemId === item.id
                       ? 'bg-muted/50'
                       : dropTargetId === item.id
@@ -247,17 +247,12 @@ function FileBrowser({
                     </div>
                     <div className="min-w-0">
                       <p className="truncate font-medium">{item.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {item.kind === 'folder'
-                          ? 'Открывается двойным кликом'
-                          : 'Превью открывается двойным кликом'}
-                      </p>
                     </div>
                   </button>
-                  <span className="self-center text-sm text-muted-foreground">{getFileTypeLabel(item)}</span>
+                  <span className="self-center text-sm text-muted-foreground">me</span>
                   <span className="self-center text-sm text-muted-foreground">{formatDate(item.updatedAt)}</span>
                   <span className="self-center text-sm text-muted-foreground">
-                    {item.kind === 'file' ? formatBytes(item.size) : '-'}
+                    {item.kind === 'file' ? formatBytes(item.size) : formatBytes(item.cachedSize ?? 0)}
                   </span>
                   <div className="flex items-center justify-end">
                     <ItemActionsMenu
