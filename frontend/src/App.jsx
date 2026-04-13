@@ -7,6 +7,7 @@ import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
 import LandingPage from '@/pages/LandingPage'
 import LoginPage from '@/pages/LoginPage'
 import NotFoundPage from '@/pages/NotFoundPage'
+import BillingPage from '@/pages/BillingPage'
 import RegisterPage from '@/pages/RegisterPage'
 import ResetPasswordPage from '@/pages/ResetPasswordPage'
 import SecurityPage from '@/pages/SecurityPage'
@@ -30,6 +31,7 @@ function App() {
             <Route element={<FilesPage />} path="files" />
             <Route element={<TrashPage />} path="trash" />
             <Route element={<SecurityPage />} path="security" />
+            <Route element={<BillingPage />} path="billing" />
           </Route>
         </Route>
 

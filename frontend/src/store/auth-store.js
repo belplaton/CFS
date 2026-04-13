@@ -3,6 +3,11 @@ import { persist } from 'zustand/middleware'
 
 const defaultQuotaBytes = 5 * 1024 * 1024 * 1024
 const defaultTotpCode = '246810'
+const storagePlanQuotas = {
+  free: 5 * 1024 * 1024 * 1024,
+  pro: 100 * 1024 * 1024 * 1024,
+  team: 500 * 1024 * 1024 * 1024,
+}
 
 function createBackupCodes() {
   return ['AX4M-7P2Q', 'BQ8L-2V6N', 'CR3D-9K1T', 'DT5H-4W8Y', 'EU7J-6R3M', 'FX9N-5Z2P']
@@ -238,6 +243,28 @@ export const useAuthStore = create(
           totpSecret: isEnabling ? 'JBSW-Y3DP-EHPK-3PXP' : '',
           totpCode: isEnabling ? defaultTotpCode : '',
           backupCodes: isEnabling ? createBackupCodes() : [],
+        }
+
+        set({
+          user: nextUser,
+          profiles: {
+            ...profiles,
+            [nextUser.email]: nextUser,
+          },
+        })
+      },
+      setStoragePlan: ({ plan }) => {
+        const { user, profiles } = get()
+        if (!user) {
+          return
+        }
+
+        const normalizedPlan = (plan ?? 'free').toString().trim().toLowerCase()
+        const quotaBytes = storagePlanQuotas[normalizedPlan] ?? storagePlanQuotas.free
+        const nextUser = {
+          ...user,
+          plan: normalizedPlan.charAt(0).toUpperCase() + normalizedPlan.slice(1),
+          quotaBytes,
         }
 
         set({

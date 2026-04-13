@@ -1,4 +1,4 @@
-import { Cloud, HardDrive, LogOut, ShieldCheck, Trash2 } from 'lucide-react'
+import { Cloud, CreditCard, HardDrive, LogOut, ShieldCheck, Trash2 } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ const navigation = [
   { to: '/app/files', label: 'Файлы', icon: HardDrive },
   { to: '/app/trash', label: 'Корзина', icon: Trash2 },
   { to: '/app/security', label: 'Безопасность', icon: ShieldCheck },
+  { to: '/app/billing', label: 'Тарифы', icon: CreditCard },
 ]
 
 function AppShell() {
@@ -76,7 +77,11 @@ function AppShell() {
               <span>{formatBytes(remainingBytes)}</span>
             </div>
 
-            <Button className="w-full" variant="outline">
+            <Button
+              className="w-full"
+              onClick={() => navigate('/app/billing')}
+              variant="outline"
+            >
               Get More Storage
             </Button>
           </div>

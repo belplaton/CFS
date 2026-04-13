@@ -196,13 +196,14 @@ function FilesPage() {
     <div className="space-y-3">
       <input
         className="hidden"
+        hidden
         id="file-upload-trigger"
         multiple
         onChange={(event) => uploadFiles(Array.from(event.target.files ?? []), currentFolderId)}
         type="file"
       />
 
-      <div className="sticky top-0 z-30 space-y-2 border-b bg-background/95 pb-3 pt-1 backdrop-blur">
+      <section className="space-y-3 rounded-xl border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Current folder</p>
@@ -241,6 +242,8 @@ function FilesPage() {
           </div>
         </div>
 
+        <div className="border-b" />
+
         <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
           <div className="relative min-w-[260px] flex-1">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -277,7 +280,7 @@ function FilesPage() {
             </Button>
           </div>
         </div>
-      </div>
+      </section>
 
       <FileBrowser
         canDropIntoFolder={(item, targetFolderId) => canMoveItemToParent(item.id, targetFolderId)}

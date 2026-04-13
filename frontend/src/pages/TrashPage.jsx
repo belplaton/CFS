@@ -1,5 +1,6 @@
 import { RotateCcw, Trash2 } from 'lucide-react'
 
+import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 import { Button } from '@/components/ui/button'
 import { formatBytes, formatDate, getFileTypeLabel } from '@/lib/utils'
 import { useFileStore } from '@/store/file-store'
@@ -20,18 +21,21 @@ function TrashPage() {
               безвозвратное удаление уже отрисованы на уровне интерфейса и store.
             </p>
           </div>
-          <Button
-            className="gap-2"
-            onClick={() => {
-              if (window.confirm('Очистить корзину полностью?')) {
-                emptyTrash()
-              }
-            }}
-            variant="outline"
-          >
-            <Trash2 className="h-4 w-4" />
-            Очистить корзину
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              className="gap-2"
+              onClick={() => {
+                if (window.confirm('Очистить корзину полностью?')) {
+                  emptyTrash()
+                }
+              }}
+              variant="outline"
+            >
+              <Trash2 className="h-4 w-4" />
+              Очистить корзину
+            </Button>
+            <ThemeSwitcher compact settingsMode />
+          </div>
         </div>
       </section>
 
