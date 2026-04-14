@@ -12,6 +12,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!frontend/src/lib/
+!frontend/src/lib/**
 parts/
 sdist/
 var/
@@ -67,6 +69,16 @@ coverage/
 *.db
 *.sqlite
 *.sqlite3
+
+# .NET / NuGet
+**/bin/
+**/obj/
+**/packages/
+.nuget/
+*.nupkg
+*.snupkg
+project.assets.json
+project.nuget.cache
 
 # MinIO data (local development)
 minio_data/
