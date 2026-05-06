@@ -1,319 +1,108 @@
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-
-const defaultQuotaBytes = 5 * 1024 * 1024 * 1024
-const defaultTotpCode = '246810'
-const storagePlanQuotas = {
-  free: 5 * 1024 * 1024 * 1024,
-  pro: 100 * 1024 * 1024 * 1024,
-  team: 500 * 1024 * 1024 * 1024,
-}
-
-function createBackupCodes() {
-  return ['AX4M-7P2Q', 'BQ8L-2V6N', 'CR3D-9K1T', 'DT5H-4W8Y', 'EU7J-6R3M', 'FX9N-5Z2P']
-}
-
-function buildUser(overrides = {}) {
-  return {
-    fullName: 'Platon Belyakov',
-    email: 'demo@cloudstorage.dev',
-    plan: 'Free',
-    quotaBytes: defaultQuotaBytes,
-    emailVerified: false,
-    twoFactorEnabled: false,
-    totpSecret: '',
-    totpCode: '',
-    backupCodes: [],
-    ...overrides,
-  }
-}
-
-function normalizeUser(user) {
-  if (!user) {
-    return null
-  }
-
-  return buildUser(user)
-}
-
-function normalizeProfiles(profiles) {
-  if (!profiles || typeof profiles !== 'object') {
-    return createProfileMap()
-  }
-
-  return Object.fromEntries(
-    Object.entries(profiles).map(([email, profile]) => [email, normalizeUser(profile)]),
-  )
-}
-
-function createProfileMap() {
-  return {
-    'demo@cloudstorage.dev': buildUser({
-      email: 'demo@cloudstorage.dev',
-      fullName: 'Platon Belyakov',
-      emailVerified: true,
-    }),
-    'google.user@cloudstorage.dev': buildUser({
-      fullName: 'Google User',
-      email: 'google.user@cloudstorage.dev',
-      emailVerified: true,
-    }),
-  }
-}
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import client from "@/api/client";
 
 export const useAuthStore = create(
   persist(
     (set, get) => ({
       isAuthenticated: false,
-      pendingEmail: '',
-      draftUser: null,
-      pendingTwoFactor: null,
-      profiles: createProfileMap(),
       user: null,
-      login: ({ email }) => {
-        const { draftUser, profiles } = get()
-        const user =
-          profiles[email]
-            ? { ...profiles[email] }
-            : draftUser && draftUser.email === email
-            ? { ...draftUser }
-            : buildUser({
-                email,
-                fullName: email.split('@')[0].replace(/[._-]/g, ' '),
-                emailVerified: email !== 'demo@cloudstorage.dev',
-              })
+      accessToken: null,
+      refreshToken: null,
+      isLoading: false,
+      error: null,
 
-        if (user.twoFactorEnabled) {
-          set({
-            isAuthenticated: false,
-            pendingEmail: '',
-            pendingTwoFactor: {
-              email: user.email,
-              fullName: user.fullName,
-            },
-            user: null,
-          })
-          return
-        }
+      // Registration
+      register: async (email, password, fullName) => {
+        set({ isLoading: true, error: null });
+        try {
+          const response = await client.post("/auth/register", {
+            email,
+            password,
+            full_name: fullName,
+          });
 
-        set({
-          isAuthenticated: true,
-          pendingEmail: '',
-          pendingTwoFactor: null,
-          user,
-        })
-      },
-      loginWithGoogle: () => {
-        const googleProfile = get().profiles['google.user@cloudstorage.dev'] ?? buildUser({
-          fullName: 'Google User',
-          email: 'google.user@cloudstorage.dev',
-          emailVerified: true,
-        })
+          // Backend returns tokens and user info
+          const { access_token, refresh_token } = response.data;
 
-        if (googleProfile.twoFactorEnabled) {
-          set({
-            isAuthenticated: false,
-            pendingEmail: '',
-            pendingTwoFactor: {
-              email: googleProfile.email,
-              fullName: googleProfile.fullName,
-            },
-            user: null,
-          })
-          return
-        }
-
-        set({
-          isAuthenticated: true,
-          pendingEmail: '',
-          pendingTwoFactor: null,
-          user: googleProfile,
-        })
-      },
-      register: ({ fullName, email }) => {
-        const draftUser = buildUser({
-          fullName,
-          email,
-          emailVerified: false,
-        })
-
-        set({
-          isAuthenticated: false,
-          pendingEmail: email,
-          draftUser,
-          pendingTwoFactor: null,
-        })
-      },
-      verifyEmail: () => {
-        const { draftUser, profiles, user } = get()
-
-        if (user) {
-          set({
-            user: {
-              ...user,
-              emailVerified: true,
-            },
-            profiles: {
-              ...profiles,
-              [user.email]: {
-                ...user,
-                emailVerified: true,
-              },
-            },
-            pendingEmail: '',
-          })
-          return
-        }
-
-        if (draftUser) {
-          const nextDraftUser = {
-            ...draftUser,
-            emailVerified: true,
-          }
+          // Since email verification is disabled, user is active immediately
+          // Fetch user data to get full profile
+          const userResponse = await client.get("/auth/me", {
+            headers: { Authorization: `Bearer ${access_token}` },
+          });
 
           set({
-            draftUser: nextDraftUser,
-            profiles: {
-              ...profiles,
-              [nextDraftUser.email]: nextDraftUser,
-            },
-            pendingEmail: '',
-          })
+            isAuthenticated: true,
+            user: userResponse.data,
+            accessToken: access_token,
+            refreshToken: refresh_token,
+            isLoading: false,
+          });
+
+          return { success: true };
+        } catch (error) {
+          const message = error.response?.data?.detail || "Registration failed";
+          set({ isLoading: false, error: message });
+          return { success: false, error: message };
         }
       },
-      verifyTwoFactor: ({ code }) => {
-        const { pendingTwoFactor, profiles } = get()
 
-        if (!pendingTwoFactor) {
-          return { success: false, reason: 'missing-challenge' }
-        }
+      // Login
+      login: async (email, password) => {
+        set({ isLoading: true, error: null });
+        try {
+          const response = await client.post("/auth/login", {
+            email,
+            password,
+          });
 
-        const user = profiles[pendingTwoFactor.email]
+          const { access_token, refresh_token } = response.data;
 
-        if (!user) {
-          return { success: false, reason: 'unknown-user' }
-        }
+          // Fetch user data
+          const userResponse = await client.get("/auth/me", {
+            headers: { Authorization: `Bearer ${access_token}` },
+          });
 
-        const normalizedCode = code.toString().trim().toUpperCase()
-        const isPrimaryCodeValid = normalizedCode === (user.totpCode || defaultTotpCode)
-        const backupCodes = user.backupCodes ?? []
-        const isBackupCodeValid = backupCodes.includes(normalizedCode)
+          set({
+            isAuthenticated: true,
+            user: userResponse.data,
+            accessToken: access_token,
+            refreshToken: refresh_token,
+            isLoading: false,
+          });
 
-        if (!isPrimaryCodeValid && !isBackupCodeValid) {
-          return { success: false, reason: 'invalid-code' }
-        }
-
-        const nextUser = {
-          ...user,
-          backupCodes: isBackupCodeValid
-            ? backupCodes.filter((backupCode) => backupCode !== normalizedCode)
-            : backupCodes,
-        }
-
-        set({
-          isAuthenticated: true,
-          pendingTwoFactor: null,
-          profiles: {
-            ...profiles,
-            [nextUser.email]: nextUser,
-          },
-          user: nextUser,
-        })
-
-        return {
-          success: true,
-          method: isBackupCodeValid ? 'backup-code' : 'totp',
+          return { success: true };
+        } catch (error) {
+          const message = error.response?.data?.detail || "Login failed";
+          set({ isLoading: false, error: message });
+          return { success: false, error: message };
         }
       },
-      cancelTwoFactor: () => {
-        set({
-          pendingTwoFactor: null,
-        })
-      },
-      toggleTwoFactor: () => {
-        const { profiles, user } = get()
-        if (!user) {
-          return
-        }
 
-        const isEnabling = !user.twoFactorEnabled
-        const nextUser = {
-          ...user,
-          twoFactorEnabled: isEnabling,
-          totpSecret: isEnabling ? 'JBSW-Y3DP-EHPK-3PXP' : '',
-          totpCode: isEnabling ? defaultTotpCode : '',
-          backupCodes: isEnabling ? createBackupCodes() : [],
-        }
-
-        set({
-          user: nextUser,
-          profiles: {
-            ...profiles,
-            [nextUser.email]: nextUser,
-          },
-        })
-      },
-      setStoragePlan: ({ plan }) => {
-        const { user, profiles } = get()
-        if (!user) {
-          return
-        }
-
-        const normalizedPlan = (plan ?? 'free').toString().trim().toLowerCase()
-        const quotaBytes = storagePlanQuotas[normalizedPlan] ?? storagePlanQuotas.free
-        const nextUser = {
-          ...user,
-          plan: normalizedPlan.charAt(0).toUpperCase() + normalizedPlan.slice(1),
-          quotaBytes,
-        }
-
-        set({
-          user: nextUser,
-          profiles: {
-            ...profiles,
-            [nextUser.email]: nextUser,
-          },
-        })
-      },
+      // Logout
       logout: () => {
         set({
           isAuthenticated: false,
-          pendingTwoFactor: null,
           user: null,
-        })
+          accessToken: null,
+          refreshToken: null,
+          error: null,
+        });
       },
-      resetAuthState: () =>
-        set({
-          isAuthenticated: false,
-          pendingEmail: '',
-          draftUser: null,
-          pendingTwoFactor: null,
-          profiles: createProfileMap(),
-          user: null,
-        }),
+
+      // Clear error
+      clearError: () => set({ error: null }),
+
+      // TODO: Implement Google OAuth, 2FA, etc.
     }),
     {
-      name: 'cfs-auth-store',
-      merge: (persistedState, currentState) => {
-        const nextState = persistedState ?? {}
-
-        return {
-          ...currentState,
-          ...nextState,
-          draftUser: normalizeUser(nextState.draftUser),
-          profiles: normalizeProfiles(nextState.profiles),
-          user: normalizeUser(nextState.user),
-        }
-      },
+      name: "cfs-auth-store",
       partialize: (state) => ({
-        isAuthenticated: state.isAuthenticated,
-        pendingEmail: state.pendingEmail,
-        draftUser: state.draftUser,
-        pendingTwoFactor: state.pendingTwoFactor,
-        profiles: state.profiles,
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
         user: state.user,
+        isAuthenticated: state.isAuthenticated,
       }),
     },
   ),
-)
-
+);

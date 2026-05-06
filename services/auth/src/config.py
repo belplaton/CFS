@@ -3,6 +3,7 @@ Configuration settings for Auth Service
 """
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -11,31 +12,31 @@ class Settings(BaseSettings):
     # Application
     env: str = "development"
 
-    # Database
-    database_url: str = "postgresql+asyncpg://cloudstorage:cloudstorage_secret@postgres-auth:5432/cloudstorage_auth"
+    # Database (No default for security)
+    database_url: str  # Must be set via env or .env file
 
-    # JWT
-    jwt_secret: str = "your-super-secret-jwt-key-change-in-production"
+    # JWT (No default for security)
+    jwt_secret: str  # Must be set via env
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
     # OAuth Google
-    google_client_id: str = ""
-    google_client_secret: str = ""
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
 
     # Email (SMTP)
-    smtp_host: str = "smtp.mailtrap.io"
+    smtp_host: Optional[str] = None
     smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
     smtp_from_email: str = "noreply@cloudstorage.local"
 
     # Frontend
     frontend_url: str = "http://localhost:8080"
 
     # Service-to-service auth
-    service_api_key: str = "change-this-in-production"
+    service_api_key: str  # Must be set via env
 
     class Config:
         env_file = ".env"

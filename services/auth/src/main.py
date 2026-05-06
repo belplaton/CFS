@@ -2,9 +2,21 @@
 Auth Service - Authentication and User Management
 """
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 from src.config import settings
+from src.models import init_db
+from src.api import api_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan events for startup/shutdown"""
+    print("Initializing database...")
+    await init_db()
+    print("Database initialized!")
+    yield
+    print("Shutting down...")
 
 
 app = FastAPI(
@@ -13,28 +25,20 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
-# CORS middleware - fixed for credentials with specific origin
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[settings.frontend_url],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Note: CORS is handled by the API Gateway (Caddy).
+# If running standalone, you may need to add CORSMiddleware here.
+
+# Include main API router
+app.include_router(api_router)
 
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "auth"}
-
-
-@app.get("/api/auth/")
-async def root():
-    """Root endpoint"""
-    return {"message": "Auth Service is running", "version": "1.0.0"}
 
 
 if __name__ == "__main__":

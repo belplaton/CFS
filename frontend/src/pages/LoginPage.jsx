@@ -1,79 +1,107 @@
-import { useState } from 'react'
-import { Navigate, Link, useLocation, useNavigate } from 'react-router-dom'
+import { useState } from "react";
+import { Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 
-import { useI18n } from '@/components/app/I18nProvider'
-import AuthShell from '@/components/auth/AuthShell'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { useAuthStore } from '@/store/auth-store'
+import { useI18n } from "@/components/app/I18nProvider";
+import AuthShell from "@/components/auth/AuthShell";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { useAuthStore } from "@/store/auth-store";
 
 function LoginPage() {
-  const { t } = useI18n()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
-  const pendingTwoFactor = useAuthStore((state) => state.pendingTwoFactor)
-  const login = useAuthStore((state) => state.login)
-  const loginWithGoogle = useAuthStore((state) => state.loginWithGoogle)
-  const verifyTwoFactor = useAuthStore((state) => state.verifyTwoFactor)
-  const cancelTwoFactor = useAuthStore((state) => state.cancelTwoFactor)
-  const [twoFactorError, setTwoFactorError] = useState('')
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const pendingTwoFactor = useAuthStore((state) => state.pendingTwoFactor);
+  const login = useAuthStore((state) => state.login);
+  const loginWithGoogle = useAuthStore((state) => state.loginWithGoogle);
+  const verifyTwoFactor = useAuthStore((state) => state.verifyTwoFactor);
+  const cancelTwoFactor = useAuthStore((state) => state.cancelTwoFactor);
+  const isLoading = useAuthStore((state) => state.isLoading);
+  const error = useAuthStore((state) => state.error);
+  const [twoFactorError, setTwoFactorError] = useState("");
 
   if (isAuthenticated) {
-    return <Navigate replace to="/app/files" />
+    return <Navigate replace to="/app/files" />;
   }
 
-  const from = location.state?.from?.pathname ?? '/app/files'
+  const from = location.state?.from?.pathname ?? "/app/files";
+
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const email = formData.get("email")?.toString().trim() ?? "";
+    const password = formData.get("password")?.toString() ?? "";
+
+    const result = await login(email, password);
+
+    if (result.success) {
+      navigate(from, { replace: true });
+    }
+  };
 
   return (
     <AuthShell
-      description={t('login.description')}
-      eyebrow={t('login.eyebrow')}
+      description={t("login.description")}
+      eyebrow={t("login.eyebrow")}
       footer={
         <span>
-          {t('login.noAccount')}{' '}
-          <Link className="font-medium underline underline-offset-4" to="/register">{t('login.create')}</Link>
+          {t("login.noAccount")}{" "}
+          <Link
+            className="font-medium underline underline-offset-4"
+            to="/register"
+          >
+            {t("login.create")}
+          </Link>
         </span>
       }
-      title={t('login.title')}
+      title={t("login.title")}
     >
       <Card className="border-0 bg-transparent shadow-none">
         <CardHeader className="px-0 pt-0">
           <CardTitle className="text-3xl">
-            {pendingTwoFactor ? t('login.cardTitleTwoFactor') : t('login.cardTitleSignIn')}
+            {pendingTwoFactor
+              ? t("login.cardTitleTwoFactor")
+              : t("login.cardTitleSignIn")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
           {pendingTwoFactor ? (
             <>
               <div className="rounded-lg border bg-muted/40 p-5 text-sm leading-7 text-foreground">
-                {t('login.twoFactorIntro', { email: pendingTwoFactor.email })}
+                {t("login.twoFactorIntro", { email: pendingTwoFactor.email })}
               </div>
 
               <form
                 className="space-y-4"
                 onSubmit={(event) => {
-                  event.preventDefault()
-                  const formData = new FormData(event.currentTarget)
+                  event.preventDefault();
+                  const formData = new FormData(event.currentTarget);
                   const result = verifyTwoFactor({
-                    code: formData.get('totpCode')?.toString().trim() ?? '',
-                  })
+                    code: formData.get("totpCode")?.toString().trim() ?? "",
+                  });
 
                   if (!result.success) {
-                    setTwoFactorError(t('login.totpInvalid'))
-                    return
+                    setTwoFactorError(t("login.totpInvalid"));
+                    return;
                   }
 
-                  setTwoFactorError('')
-                  navigate(from, { replace: true })
+                  setTwoFactorError("");
+                  navigate(from, { replace: true });
                 }}
               >
                 <div className="space-y-2">
                   <label className="text-sm font-medium" htmlFor="login-totp">
-                    {t('login.totpLabel')}
+                    {t("login.totpLabel")}
                   </label>
-                  <Input autoFocus id="login-totp" inputMode="numeric" name="totpCode" placeholder={t('login.totpPlaceholder')} />
+                  <Input
+                    autoFocus
+                    id="login-totp"
+                    inputMode="numeric"
+                    name="totpCode"
+                    placeholder={t("login.totpPlaceholder")}
+                  />
                 </div>
 
                 {twoFactorError ? (
@@ -83,83 +111,97 @@ function LoginPage() {
                 ) : null}
 
                 <Button className="w-full py-6 text-base" type="submit">
-                  {t('login.confirmLogin')}
+                  {t("login.confirmLogin")}
                 </Button>
               </form>
 
               <Button
                 className="w-full py-6 text-base"
                 onClick={() => {
-                  setTwoFactorError('')
-                  cancelTwoFactor()
+                  setTwoFactorError("");
+                  cancelTwoFactor();
                 }}
                 variant="outline"
               >
-                {t('login.backToLogin')}
+                {t("login.backToLogin")}
               </Button>
             </>
           ) : (
             <>
-              <form
-                className="space-y-4"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  const formData = new FormData(event.currentTarget)
-                  login({
-                    email: formData.get('email')?.toString().trim() ?? '',
-                  })
-
-                  if (useAuthStore.getState().isAuthenticated) {
-                    navigate(from, { replace: true })
-                  }
-                }}
-              >
+              <form className="space-y-4" onSubmit={handleLogin}>
                 <div className="space-y-2">
                   <label className="text-sm font-medium" htmlFor="login-email">
                     Email
                   </label>
-                  <Input defaultValue="demo@cloudstorage.dev" id="login-email" name="email" type="email" />
+                  <Input
+                    defaultValue="demo@cloudstorage.dev"
+                    id="login-email"
+                    name="email"
+                    type="email"
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-4">
-                    <label className="text-sm font-medium" htmlFor="login-password">
-                      {t('common.password')}
+                    <label
+                      className="text-sm font-medium"
+                      htmlFor="login-password"
+                    >
+                      {t("common.password")}
                     </label>
-                    <Link className="text-sm underline underline-offset-4" to="/forgot-password">
-                      {t('login.forgotPassword')}
+                    <Link
+                      className="text-sm underline underline-offset-4"
+                      to="/forgot-password"
+                    >
+                      {t("login.forgotPassword")}
                     </Link>
                   </div>
-                  <Input defaultValue="demo-password" id="login-password" name="password" type="password" />
+                  <Input
+                    defaultValue="demo-password"
+                    id="login-password"
+                    name="password"
+                    type="password"
+                    required
+                  />
                 </div>
-                <Button className="mt-2 w-full py-6 text-base" type="submit">
-                  {t('login.signIn')}
+
+                {error ? (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    {error}
+                  </div>
+                ) : null}
+
+                <Button
+                  className="mt-2 w-full py-6 text-base"
+                  type="submit"
+                  disabled={isLoading}
+                >
+                  {isLoading ? t("common.loading") : t("login.signIn")}
                 </Button>
               </form>
 
               <Button
                 className="w-full py-6 text-base"
-                onClick={() => {
-                  loginWithGoogle()
-
+                onClick={async () => {
+                  await loginWithGoogle();
                   if (useAuthStore.getState().isAuthenticated) {
-                    navigate(from, { replace: true })
+                    navigate(from, { replace: true });
                   }
                 }}
                 variant="outline"
               >
-                {t('login.continueGoogle')}
+                {t("login.continueGoogle")}
               </Button>
 
               <div className="rounded-lg border bg-muted/40 p-5 text-sm leading-7 text-foreground">
-                {t('login.demoHint')}
+                {t("login.demoHint")}
               </div>
             </>
           )}
         </CardContent>
       </Card>
     </AuthShell>
-  )
+  );
 }
 
-export default LoginPage
-
+export default LoginPage;
