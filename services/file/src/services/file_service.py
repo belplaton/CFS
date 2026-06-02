@@ -1,0 +1,315 @@
+"""
+File service — business logic for file operations (Phase 2: repository pattern).
+
+All persistence goes through :class:`src.repositories.file.FileRepository`
+and :class:`src.repositories.folder.FolderRepository`; this module only
+encodes the rules: validation, ownership, quota, soft-delete semantics,
+and audit logging.
+"""
+from __future__ import annotations
+
+import os
+from uuid import UUID
+
+from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.config import settings
+from src.exceptions import (
+    FileNotFound,
+    FolderNotFound,
+    InvalidFileName,
+    PayloadTooLarge,
+)
+from src.models.file import File
+from src.repositories.file import FileRepository
+from src.repositories.folder import FolderRepository
+from src.schemas import FileUploadResponse
+from src.services import audit_service, quota_service
+from src.utils import minio_client
+from src.utils.logging import get_logger
+from src.utils.validators import (
+    sanitize_filename,
+    validate_extension,
+    validate_mime_type,
+)
+
+
+logger = get_logger(__name__)
+
+
+class FileService:
+    """Stateless service — ``db`` is the only collaborator it needs."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    # ==================== Read ====================
+
+    async def get_file(self, file_id: UUID, user_id: UUID) -> File:
+        file = await FileRepository.get_active(self.db, file_id, user_id)
+        if file is None:
+            raise FileNotFound("File not found")
+        return file
+
+    async def list_files(
+        self,
+        user_id: UUID,
+        folder_id: UUID | None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[File]:
+        return list(
+            await FileRepository.list_in_folder(
+                self.db, user_id, folder_id, limit=limit, offset=offset
+            )
+        )
+
+    # ==================== Upload ====================
+
+    async def upload_file(
+        self,
+        user_id: UUID,
+        folder_id: UUID | None,
+        raw_filename: str | None,
+        content_type: str | None,
+        file_data: bytes,
+    ) -> FileUploadResponse:
+        """
+        Atomically upload a file.
+
+        Steps:
+            1. Sanitize filename + validate extension and MIME.
+            2. Enforce size limit.
+            3. Verify folder ownership (if given).
+            4. Take a per-user advisory lock and check the quota.
+            5. Stream the bytes into MinIO under a unique key.
+            6. Insert the ``File`` row.
+
+        If step 5 succeeds but step 6 fails, we make a best-effort attempt
+        to delete the MinIO object so the storage does not leak.
+        """
+        # 1. Filename
+        filename = sanitize_filename(raw_filename)
+        # Extension must match the whitelist. Use the *sanitized* name so
+        # a sneaky "report.pdf.exe" cannot bypass the check.
+        validate_extension(filename)
+        ext = os.path.splitext(filename)[1].lstrip(".").lower()
+
+        # 2. Size
+        size = len(file_data)
+        if size == 0:
+            raise InvalidFileName("Empty file is not allowed")
+        if size > settings.max_upload_size:
+            raise PayloadTooLarge(
+                f"File exceeds the {settings.max_upload_size}-byte upload limit",
+                extra={"size": size, "limit": settings.max_upload_size},
+            )
+
+        # 3. MIME (best-effort validation of the declared content type)
+        mime = validate_mime_type(content_type)
+
+        # 4. Folder ownership (raises FolderNotFound -> 404 if not owned)
+        if folder_id is not None:
+            await self._assert_folder_owned(folder_id, user_id)
+
+        # 5. Quota reservation — acquires per-user advisory lock
+        await quota_service.reserve_quota(self.db, user_id, size)
+
+        # 6. Upload to MinIO
+        object_key = minio_client.files_object_key(user_id, ext)
+        try:
+            minio_client.put_bytes(
+                settings.minio_bucket,
+                object_key,
+                file_data,
+                mime,
+            )
+        except Exception:
+            # Nothing to roll back in the DB yet — let the exception
+            # propagate and let ``get_db`` rollback the transaction.
+            logger.exception(
+                "minio.upload.failed",
+                user_id=str(user_id),
+                object_key=object_key,
+            )
+            raise
+
+        # 7. Insert DB row
+        file_row = File(
+            user_id=user_id,
+            folder_id=folder_id,
+            name=filename,
+            size=size,
+            mime_type=mime,
+            minio_object_id=object_key,
+        )
+        try:
+            await FileRepository.add(self.db, file_row)
+        except Exception:
+            logger.exception(
+                "db.insert.failed.compensating",
+                user_id=str(user_id),
+                object_key=object_key,
+            )
+            minio_client.remove(settings.minio_bucket, object_key)
+            raise
+
+        logger.info(
+            "file.uploaded",
+            file_id=str(file_row.id),
+            user_id=str(user_id),
+            name=filename,
+            size=size,
+        )
+
+        await audit_service.record_event(
+            self.db,
+            actor_id=user_id,
+            event="file.upload",
+            target_id=file_row.id,
+            target_kind="file",
+            extra={"name": filename, "size": size, "mime_type": mime},
+        )
+
+        return FileUploadResponse(
+            id=file_row.id,
+            name=file_row.name,
+            size=file_row.size,
+            mime_type=file_row.mime_type or mime,
+        )
+
+    # ==================== Soft delete / restore / purge ====================
+
+    async def delete_file(self, file_id: UUID, user_id: UUID) -> None:
+        file = await self.get_file(file_id, user_id)
+        new_key = minio_client.trash_object_key(
+            user_id, minio_client.extract_extension(file.minio_object_id)
+        )
+        minio_client.move(
+            settings.minio_bucket,
+            file.minio_object_id,
+            new_key,
+            file.mime_type or "application/octet-stream",
+        )
+        file.minio_object_id = new_key
+        file.deleted_at = func.now()
+        await self.db.flush()
+        await audit_service.record_event(
+            self.db,
+            actor_id=user_id,
+            event="file.soft_delete",
+            target_id=file_id,
+            target_kind="file",
+            extra={"name": file.name},
+        )
+
+    async def restore_file(self, file_id: UUID, user_id: UUID) -> None:
+        # Trashed rows aren't returned by ``get_active`` — use the
+        # trashed-state lookup.
+        file = await FileRepository.get_trashed(self.db, file_id, user_id)
+        if file is None:
+            raise FileNotFound("File not found in trash")
+        ext = minio_client.extract_extension(file.minio_object_id)
+        new_key = minio_client.files_object_key(user_id, ext)
+        minio_client.move(
+            settings.minio_bucket,
+            file.minio_object_id,
+            new_key,
+            file.mime_type or "application/octet-stream",
+        )
+        file.minio_object_id = new_key
+        file.deleted_at = None
+        await self.db.flush()
+        await audit_service.record_event(
+            self.db,
+            actor_id=user_id,
+            event="file.restore",
+            target_id=file_id,
+            target_kind="file",
+        )
+
+    async def permanent_delete_file(self, file_id: UUID, user_id: UUID) -> None:
+        # Even for permanent delete we look up the file in any state. If
+        # it's currently in trash, the MinIO key already points at the
+        # trash prefix and the remove still works.
+        file = await FileRepository.get_any_state(self.db, file_id, user_id)
+        if file is None:
+            raise FileNotFound("File not found")
+        file_name = file.name
+        minio_client.remove(settings.minio_bucket, file.minio_object_id)
+        await FileRepository.delete(self.db, file)
+        await audit_service.record_event(
+            self.db,
+            actor_id=user_id,
+            event="file.permanent_delete",
+            target_id=file_id,
+            target_kind="file",
+            extra={"name": file_name},
+        )
+
+    # ==================== Move / rename ====================
+
+    async def move_file(
+        self, file_id: UUID, user_id: UUID, folder_id: UUID | None
+    ) -> None:
+        file = await self.get_file(file_id, user_id)
+        if folder_id is not None:
+            await self._assert_folder_owned(folder_id, user_id)
+        file.folder_id = folder_id
+        await self.db.flush()
+        await audit_service.record_event(
+            self.db,
+            actor_id=user_id,
+            event="file.move",
+            target_id=file_id,
+            target_kind="file",
+            extra={"folder_id": str(folder_id) if folder_id else None},
+        )
+
+    async def rename_file(self, file_id: UUID, user_id: UUID, name: str) -> None:
+        file = await self.get_file(file_id, user_id)
+        new_name = sanitize_filename(name)
+        validate_extension(new_name)
+        file.name = new_name
+        await self.db.flush()
+        await audit_service.record_event(
+            self.db,
+            actor_id=user_id,
+            event="file.rename",
+            target_id=file_id,
+            target_kind="file",
+            extra={"new_name": new_name},
+        )
+
+    # ==================== Quota ====================
+
+    async def get_quota(self, user_id: UUID) -> tuple[int, int]:
+        used = await quota_service.get_usage(self.db, user_id)
+        total = await quota_service.get_storage_quota(user_id)
+        return used, total
+
+    # ==================== Presigned URLs (short-lived) ====================
+
+    async def get_presigned_url(self, file_id: UUID, user_id: UUID) -> str:
+        file = await self.get_file(file_id, user_id)
+        return minio_client.presigned_get_url(
+            settings.minio_bucket, file.minio_object_id
+        )
+
+    # ==================== Streamed download ====================
+
+    async def stream_file(self, file_id: UUID, user_id: UUID):
+        """Yield chunks of the file body for ``StreamingResponse``."""
+        file = await self.get_file(file_id, user_id)
+        return minio_client.get_stream(
+            settings.minio_bucket, file.minio_object_id, chunk_size=settings.stream_chunk_size
+        ), file
+
+    # ==================== Helpers ====================
+
+    async def _assert_folder_owned(self, folder_id: UUID, user_id: UUID) -> None:
+        """Verify the folder exists, belongs to the user, and is not in trash."""
+        folder = await FolderRepository.get_active(self.db, folder_id, user_id)
+        if folder is None:
+            raise FolderNotFound("Target folder not found")

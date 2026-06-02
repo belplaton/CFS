@@ -1,5 +1,8 @@
 # Caddy Gateway Configuration
-# Local development (HTTP only, no HTTPS)
+#
+# Local development runs over plain HTTP on :80.  In production this
+# file is meant to be replaced (or extended) with an HTTPS-enabled
+# block that enables HSTS — see the prod block at the bottom.
 
 http://:80 {
     # Log all requests
@@ -7,6 +10,31 @@ http://:80 {
         output stdout
         format console
         level info
+    }
+
+    # ==================== Security headers (Phase 2.8) ====================
+    # Applied to every response.  These are no-ops for non-browser
+    # clients (curl, mobile apps) and harmless for the SPA.
+    header {
+        # Don't let browsers/old proxies second-guess our Content-Type.
+        X-Content-Type-Options "nosniff"
+        # Clickjacking protection for any HTML we ever serve.
+        X-Frame-Options "DENY"
+        # Don't leak referrers to third-party origins.
+        Referrer-Policy "no-referrer"
+        # Disable powerful APIs we never use.
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        # Conservative CSP for the JSON API: we never inline anything,
+        # and we explicitly do not allow the response to be embedded
+        # anywhere.  The frontend has its own CSP in nginx.conf.
+        Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+        # Don't cache responses that may contain user data.
+        Cache-Control "no-store"
+        # Cross-origin isolation primitives for browsers.
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Resource-Policy "same-origin"
+        # Strip the Server header so we don't leak Caddy version.
+        -Server
     }
 
     # CORS headers for API
@@ -46,3 +74,18 @@ http://:80 {
         reverse_proxy frontend:80
     }
 }
+
+# ==================== Production HTTPS block (template) ====================
+#
+# In production replace the block above with the one below.  Caddy
+# will obtain a Let's Encrypt certificate automatically and enable
+# HSTS preload.
+#
+# your-domain.example.com {
+#     header {
+#         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+#         # ... plus all of the headers from the dev block above
+#     }
+#     # same handle directives as above
+# }
+

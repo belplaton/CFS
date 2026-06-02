@@ -1,150 +1,54 @@
 """
 File Service - File and Folder Management
-"""
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
+Phase 2: schema management is now handled by Alembic.  Production
+deployments must run ``alembic upgrade head`` *before* starting this
+process (the Docker entrypoint in ``docker-compose.yml`` does this).
+The lifespan below does **not** touch the database schema, so multiple
+replicas of the service can boot in parallel without race conditions.
+"""
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from src.api import api_router
+from src.api.exception_handlers import register_exception_handlers
 from src.config import settings
+from src.middleware import IdempotencyMiddleware, RequestIDMiddleware, RequestMetaMiddleware
+from src.utils.logging import configure_logging, get_logger
+from src.utils.rate_limiter import close_redis
+
+
+configure_logging(env=settings.env, level=settings.log_level)
+logger = get_logger("file-service")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("file_service.starting", env=settings.env, version="1.1.0")
+    yield
+    await close_redis()
+    logger.info("file_service.shutting_down")
 
 
 app = FastAPI(
     title="Cloud Storage File Service",
     description="File and folder management service for Cloud File Storage",
-    version="1.0.0",
+    version="1.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
-# CORS middleware - fixed for credentials with specific origin
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[settings.frontend_url if hasattr(settings, 'frontend_url') else "http://localhost:8080"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "service": "file"}
-
-
-@app.get("/api/files/")
-async def root():
-    """Root endpoint"""
-    return {"message": "File Service is running", "version": "1.0.0"}
-
-
-# TODO: Implement file endpoints
-# @app.post("/api/files/upload")
-# async def upload_file():
-#     """Upload a new file"""
-#     pass
-#
-# @app.get("/api/files/")
-# async def list_files():
-#     """List files in folder"""
-#     pass
-#
-# @app.get("/api/files/{file_id}")
-# async def get_file(file_id: str):
-#     """Get file metadata"""
-#     pass
-#
-# @app.get("/api/files/{file_id}/download")
-# async def download_file(file_id: str):
-#     """Download a file"""
-#     pass
-#
-# @app.delete("/api/files/{file_id}")
-# async def delete_file(file_id: str):
-#     """Delete a file (move to trash)"""
-#     pass
-#
-# @app.post("/api/files/{file_id}/restore")
-# async def restore_file(file_id: str):
-#     """Restore file from trash"""
-#     pass
-#
-# @app.delete("/api/files/{file_id}/permanent")
-# async def permanently_delete_file(file_id: str):
-#     """Permanently delete file"""
-#     pass
-#
-# @app.post("/api/files/{file_id}/move")
-# async def move_file(file_id: str):
-#     """Move file to another folder"""
-#     pass
-#
-# @app.patch("/api/files/{file_id}/rename")
-# async def rename_file(file_id: str):
-#     """Rename a file"""
-#     pass
-#
-# @app.post("/api/files/{file_id}/copy")
-# async def copy_file(file_id: str):
-#     """Copy a file"""
-#     pass
-#
-# @app.get("/api/files/{file_id}/url")
-# async def get_file_url(file_id: str):
-#     """Get presigned URL for file"""
-#     pass
-
-
-# TODO: Implement folder endpoints
-# @app.post("/api/folders/")
-# async def create_folder():
-#     """Create a new folder"""
-#     pass
-#
-# @app.get("/api/folders/")
-# async def list_folders():
-#     """List folders"""
-#     pass
-#
-# @app.get("/api/folders/{folder_id}")
-# async def get_folder(folder_id: str):
-#     """Get folder metadata"""
-#     pass
-#
-# @app.patch("/api/folders/{folder_id}")
-# async def update_folder(folder_id: str):
-#     """Update folder (rename, move)"""
-#     pass
-#
-# @app.delete("/api/folders/{folder_id}")
-# async def delete_folder(folder_id: str):
-#     """Delete a folder"""
-#     pass
-
-
-# TODO: Implement search endpoints
-# @app.get("/api/search")
-# async def search_files():
-#     """Search files by name"""
-#     pass
-
-
-# TODO: Implement trash endpoints
-# @app.get("/api/trash/")
-# async def list_trash():
-#     """List items in trash"""
-#     pass
-#
-# @app.post("/api/trash/empty")
-# async def empty_trash():
-#     """Empty the trash"""
-#     pass
-
-
-# TODO: Implement quota endpoints
-# @app.get("/api/quota")
-# async def get_quota():
-#     """Get user storage quota usage"""
-#     pass
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(RequestMetaMiddleware)
+# Idempotency must wrap routes from the inside — Starlette applies
+# middlewares in reverse order of ``add_middleware`` calls, so this
+# runs before the request reaches the handler and after the response
+# is built.  Order matters: keep this as the *last* add_middleware.
+app.add_middleware(IdempotencyMiddleware)
+register_exception_handlers(app)
+app.include_router(api_router)
 
 
 if __name__ == "__main__":

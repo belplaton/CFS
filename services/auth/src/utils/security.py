@@ -1,14 +1,27 @@
 """
-Security utilities for Auth Service
+Security utilities for Auth Service.
+
+Phase 3 changes:
+
+* Access and refresh tokens now carry ``iss`` (issuer) and ``aud``
+  (audience) claims.  Downstream services reject tokens that don't
+  match their configured values, so an attacker who steals a token
+  from another service cannot replay it against this stack.
+* ``decode_token`` validates ``iss`` and ``aud`` when present in the
+  payload (FastAPI's python-jose does the comparison internally).
+* Both token types carry an explicit ``type`` claim — the File
+  service refuses to use a refresh token against a data API.
 """
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import HTTPException, status
 
 from src.config import settings
+
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -17,67 +30,92 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # ==================== Password Utilities ====================
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plain password against a hash"""
+    """Verify a plain password against a hash."""
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password"""
+    """Hash a password."""
     return pwd_context.hash(password)
 
 
 # ==================== JWT Utilities ====================
 
-def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT access token"""
+
+def _base_claims(token_type: str) -> Dict[str, Any]:
+    """Claims that every token issued by this service carries."""
+    return {
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+        "type": token_type,
+    }
+
+
+def create_access_token(
+    data: Dict[str, Any], expires_delta: Optional[timedelta] = None
+) -> str:
+    """Create JWT access token."""
     to_encode = data.copy()
+    to_encode.update(_base_claims("access"))
 
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-
-    to_encode.update({"exp": expire, "type": "access"})
-    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-    return encoded_jwt
+        expire = datetime.now(timezone.utc) + timedelta(
+            minutes=settings.access_token_expire_minutes
+        )
+    to_encode["exp"] = expire
+    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
 def create_refresh_token(data: Dict[str, Any]) -> str:
-    """Create JWT refresh token (longer lived)"""
+    """Create JWT refresh token (longer lived)."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
-    to_encode.update({"exp": expire, "type": "refresh"})
-    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-    return encoded_jwt
+    to_encode.update(_base_claims("refresh"))
+    to_encode["exp"] = datetime.now(timezone.utc) + timedelta(
+        days=settings.refresh_token_expire_days
+    )
+    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
 def decode_token(token: str, expected_type: Optional[str] = None) -> Dict[str, Any]:
     """
     Decode and verify JWT token.
-    Optionally verify the token type (access/refresh).
+
+    Validates ``iss``/``aud`` against the configured values and (when
+    ``expected_type`` is given) the ``type`` claim.  Raises ``JWTError``
+    on any failure — callers should map that to a 401 themselves.
     """
-    try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-
-        if expected_type and payload.get("type") != expected_type:
-            raise JWTError(f"Invalid token type. Expected {expected_type}, got {payload.get('type')}")
-
-        return payload
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    return jwt.decode(
+        token,
+        settings.jwt_secret,
+        algorithms=[settings.jwt_algorithm],
+        audience=settings.jwt_audience,
+        issuer=settings.jwt_issuer,
+        options={"require": ["exp", "sub", "type"]},
+    )
 
 
 # ==================== Token Type Check ====================
 
 def is_access_token(payload: Dict[str, Any]) -> bool:
-    """Check if token is access token"""
+    """Check if token is access token."""
     return payload.get("type") == "access"
 
 
 def is_refresh_token(payload: Dict[str, Any]) -> bool:
-    """Check if token is refresh token"""
+    """Check if token is refresh token."""
     return payload.get("type") == "refresh"
+
+
+# Re-export so ``dependencies.py`` keeps its existing import path.
+__all__ = [
+    "JWTError",
+    "create_access_token",
+    "create_refresh_token",
+    "decode_token",
+    "get_password_hash",
+    "is_access_token",
+    "is_refresh_token",
+    "verify_password",
+]

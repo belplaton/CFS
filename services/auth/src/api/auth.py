@@ -3,8 +3,6 @@ Auth API endpoints
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from time import sleep
-from datetime import datetime
 
 from src.models import get_db
 from src.schemas import (

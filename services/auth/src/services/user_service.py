@@ -1,91 +1,105 @@
 """
-User service for Auth Service
+User service for Auth Service (Phase 3: SQLAlchemy 2.0, UUID PKs).
+
+The service is intentionally thin — repositories (Phase 3.11) own the
+SQL; here we encode the user-management business rules (uniqueness,
+password hashing, token issuance, last-login bookkeeping).
 """
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import UUID
+
 from fastapi import HTTPException, status
-from datetime import datetime, timedelta
-import secrets
 
 from src.models.user import User
-from src.schemas import UserCreate, UserResponse
-from src.utils.security import get_password_hash, verify_password, create_access_token, create_refresh_token
+from src.repositories.user import UserRepository
+from src.schemas import UserCreate
+from src.utils.security import (
+    create_access_token,
+    create_refresh_token,
+    get_password_hash,
+    verify_password,
+)
 
 
 class UserService:
-    """Service for user operations"""
+    """Service for user operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db) -> None:
         self.db = db
 
-    async def get_user_by_email(self, email: str) -> User | None:
-        """Get user by email (case-insensitive)"""
-        normalized_email = email.lower().strip()
-        result = await self.db.execute(select(User).where(User.email == normalized_email))
-        return result.scalar_one_or_none()
+    # ==================== Read ====================
 
-    async def get_user_by_id(self, user_id: int) -> User | None:
-        """Get user by ID"""
-        result = await self.db.execute(select(User).where(User.id == user_id))
-        return result.scalar_one_or_none()
+    async def get_user_by_email(self, email: str) -> User | None:
+        return await UserRepository.get_by_email(self.db, email)
+
+    async def get_user_by_id(self, user_id: UUID) -> User | None:
+        return await UserRepository.get_by_id(self.db, user_id)
+
+    # ==================== Create ====================
 
     async def create_user(self, user_data: UserCreate) -> User:
-        """Create a new user"""
-        # Normalize email
+        """Create a new user.
+
+        Raises ``HTTPException(400)`` if the email is already registered.
+        """
         normalized_email = user_data.email.lower().strip()
 
-        # Check if user already exists
-        existing_user = await self.get_user_by_email(normalized_email)
-        if existing_user:
+        existing = await self.get_user_by_email(normalized_email)
+        if existing is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
+                detail="Email already registered",
             )
 
-        # Create new user
-        db_user = User(
-            email=normalized_email,  # Store normalized email
+        user = User(
+            email=normalized_email,
             password_hash=get_password_hash(user_data.password),
             full_name=user_data.full_name,
             is_active=True,
-            is_verified=True,  # Email verification disabled for now
+            # Email verification is disabled for now — flip to False once
+            # the verification flow is wired up.
+            is_verified=True,
         )
+        await UserRepository.add(self.db, user)
+        return user
 
-        self.db.add(db_user)
-        await self.db.commit()
-        await self.db.refresh(db_user)
-        return db_user
+    # ==================== Authenticate ====================
 
     async def authenticate_user(self, email: str, password: str) -> User | None:
-        """Authenticate user with email and password"""
-        # Normalize email for lookup
-        normalized_email = email.lower().strip()
-        user = await self.get_user_by_email(normalized_email)
-        if not user:
+        """Return the user iff the credentials are valid, else ``None``."""
+        user = await self.get_user_by_email(email)
+        if user is None:
             return None
-        # type: ignore - SQLAlchemy Column vs str
-        if not verify_password(password, user.password_hash):  # type: ignore[arg-type]
+        if not verify_password(password, user.password_hash):
             return None
         return user
 
+    # ==================== Tokens ====================
+
     async def create_tokens_for_user(self, user: User) -> dict:
-        """Create access and refresh tokens for user"""
+        """Mint a fresh access / refresh pair for ``user`` and update
+        ``last_login`` in the same transaction."""
         token_data = {"sub": str(user.id), "email": user.email}
 
         access_token = create_access_token(token_data)
         refresh_token = create_refresh_token(token_data)
 
-        # Update last login
-        user.last_login = datetime.utcnow()  # type: ignore[assignment]
-        await self.db.commit()
-
+        # ``expire_on_commit=False`` on the engine + an explicit
+        # assignment means the new value is visible to the caller even
+        # before commit (the FastAPI dependency will commit on the way
+        # out via ``get_db``).
+        user.last_login = datetime.now(timezone.utc)
+        await self.db.flush()
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
         }
 
+    # ==================== Misc ====================
+
     async def verify_user_email(self, user: User) -> None:
-        """Mark user as verified"""
-        user.is_verified = True  # type: ignore[assignment]
-        await self.db.commit()
+        user.is_verified = True
+        await self.db.flush()

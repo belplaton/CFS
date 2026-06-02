@@ -15,6 +15,24 @@ pydantic-settings==2.1.0
 # MinIO S3
 minio==7.2.3
 
+# JWT
+python-jose[cryptography]==3.3.0
+
+# HTTP client
+httpx==0.26.0
+
 # Utils
 python-dotenv==1.0.0
 python-dateutil==2.8.2
+
+# Structured logging
+structlog==24.1.0
+
+# Redis (rate limiting, idempotency cache)
+redis==5.0.4
+
+# Testing
+pytest==8.0.0
+pytest-asyncio==0.23.5
+httpx==0.26.0
+testcontainers[postgres]==4.8.0
