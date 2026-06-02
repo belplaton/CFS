@@ -27,6 +27,11 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         request_id = request.headers.get(_HEADER) or uuid4().hex
+        # ``request.state`` is the cross-middleware channel — outer
+        # middlewares (e.g. ``AccessLogMiddleware``) read it AFTER their
+        # inner siblings have run, by which time the contextvar set here
+        # has been reset.  State survives the inner finally blocks.
+        request.state.request_id = request_id
         token = request_id_var.set(request_id)
         clear_contextvars()
         bind_contextvars(request_id=request_id)

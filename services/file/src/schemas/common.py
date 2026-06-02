@@ -4,7 +4,7 @@ Common Pydantic schemas shared across endpoints.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Generic, List, Optional, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -29,3 +29,18 @@ class QuotaResponse(BaseModel):
     used: int
     total: int
     percent: float = 0.0
+
+
+T = TypeVar("T")
+
+
+class Page(BaseModel, Generic[T]):
+    """
+    Cursor-paginated response (Phase 4.5).
+
+    ``next_cursor`` is ``None`` when there are no more results.
+    Clients keep calling with that cursor until they get ``None`` back.
+    """
+
+    items: List[T]
+    next_cursor: Optional[str] = None

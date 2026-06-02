@@ -47,6 +47,9 @@ class RequestMetaMiddleware(BaseHTTPMiddleware):
             ip=_resolve_ip(request),
             user_agent=_resolve_user_agent(request),
         )
+        # ``request.state`` is the cross-middleware channel — see
+        # ``RequestIDMiddleware`` for the rationale.
+        request.state.request_meta = meta
         token = request_meta_var.set(meta)
         try:
             return await call_next(request)

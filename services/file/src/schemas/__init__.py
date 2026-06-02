@@ -6,7 +6,13 @@ resource).  This module re-exports every public symbol so existing
 ``from src.schemas import FooBar`` imports keep working — the public
 API surface did not change, only the internal layout.
 """
-from src.schemas.common import ItemResponse, QuotaResponse
+from src.schemas.bulk import (
+    MAX_BULK_ITEMS,
+    BulkDeleteRequest,
+    BulkMoveRequest,
+    BulkOperationResult,
+)
+from src.schemas.common import ItemResponse, Page, QuotaResponse
 from src.schemas.file import (
     FileMoveRequest,
     FileRenameRequest,
@@ -18,6 +24,10 @@ from src.schemas.search import SearchResponse
 from src.schemas.trash import TrashItemResponse
 
 __all__ = [
+    "MAX_BULK_ITEMS",
+    "BulkDeleteRequest",
+    "BulkMoveRequest",
+    "BulkOperationResult",
     "FileMoveRequest",
     "FileRenameRequest",
     "FileResponse",
@@ -26,6 +36,7 @@ __all__ = [
     "FolderResponse",
     "FolderUpdate",
     "ItemResponse",
+    "Page",
     "QuotaResponse",
     "SearchResponse",
     "TrashItemResponse",

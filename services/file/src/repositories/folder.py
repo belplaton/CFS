@@ -9,10 +9,11 @@ from __future__ import annotations
 from typing import Optional, Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.folder import Folder
+from src.utils.cursor import Cursor
 
 
 class FolderRepository:
@@ -52,6 +53,29 @@ class FolderRepository:
         return result.scalars().all()
 
     @staticmethod
+    async def list_in_folder_after(
+        db: AsyncSession,
+        user_id: UUID,
+        parent_id: Optional[UUID],
+        cursor: Cursor,
+        *,
+        limit: int = 200,
+    ) -> Sequence[Folder]:
+        """Cursor-paginated variant of :meth:`list_in_folder`."""
+        result = await db.execute(
+            select(Folder)
+            .where(
+                Folder.user_id == user_id,
+                Folder.parent_id == parent_id,
+                Folder.deleted_at.is_(None),
+                tuple_(Folder.name, Folder.id) > tuple_(cursor.name, cursor.id),
+            )
+            .order_by(Folder.name, Folder.id)
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    @staticmethod
     async def list_trashed(
         db: AsyncSession, user_id: UUID
     ) -> Sequence[Folder]:
@@ -62,6 +86,77 @@ class FolderRepository:
                 Folder.deleted_at.isnot(None),
             )
             .order_by(Folder.deleted_at.desc())
+        )
+        return result.scalars().all()
+
+    @staticmethod
+    async def list_child_ids(
+        db: AsyncSession,
+        parent_ids: list[UUID],
+        user_id: UUID,
+    ) -> list[UUID]:
+        """
+        Return the IDs of every active folder whose ``parent_id`` is
+        in ``parent_ids``.  Used by the recursive trash cascade to
+        walk a folder subtree one level at a time.
+        """
+        if not parent_ids:
+            return []
+        result = await db.execute(
+            select(Folder.id).where(
+                Folder.user_id == user_id,
+                Folder.parent_id.in_(parent_ids),
+                Folder.deleted_at.is_(None),
+            )
+        )
+        return [row[0] for row in result.all()]
+
+    @staticmethod
+    async def list_active_files_in_folders(
+        db: AsyncSession,
+        folder_ids: list[UUID],
+        user_id: UUID,
+    ) -> Sequence:
+        """
+        Return every active file whose ``folder_id`` is in ``folder_ids``.
+
+        The return type is intentionally loose (``Sequence``) — the
+        concrete row class lives in :mod:`src.models.file` and we do
+        not want a static import here to avoid a circular dependency
+        on the file service layer.
+        """
+        from src.models.file import File
+
+        if not folder_ids:
+            return []
+        result = await db.execute(
+            select(File).where(
+                File.user_id == user_id,
+                File.folder_id.in_(folder_ids),
+                File.deleted_at.is_(None),
+            )
+        )
+        return result.scalars().all()
+
+    @staticmethod
+    async def list_trashed_before(
+        db: AsyncSession,
+        cutoff,
+        *,
+        limit: int = 500,
+    ) -> Sequence:
+        """
+        Return up to ``limit`` soft-deleted folders whose ``deleted_at``
+        is older than ``cutoff`` (Phase 4.2 TTL cleanup).
+        """
+        result = await db.execute(
+            select(Folder)
+            .where(
+                Folder.deleted_at.isnot(None),
+                Folder.deleted_at < cutoff,
+            )
+            .order_by(Folder.id)
+            .limit(limit)
         )
         return result.scalars().all()
 

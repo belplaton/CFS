@@ -4,7 +4,7 @@ File API endpoints (Phase 1: streaming upload + proxied download).
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,15 +12,20 @@ from src.config import settings
 from src.exceptions import PayloadTooLarge
 from src.models import get_db
 from src.schemas import (
+    BulkDeleteRequest,
+    BulkMoveRequest,
+    BulkOperationResult,
     FileMoveRequest,
     FileRenameRequest,
     FileResponse,
     FileUploadResponse,
     ItemResponse,
+    Page,
     QuotaResponse,
 )
 from src.services.file_service import FileService
 from src.services.folder_service import FolderService
+from src.utils.cursor import Cursor, CursorError
 from src.utils.dependencies import get_current_user_id
 from src.utils.rate_limiter import POLICY_DELETE, POLICY_UPLOAD, rate_limit
 from src.utils.validators import content_disposition_filename
@@ -57,19 +62,42 @@ async def _read_upload_with_limit(file: UploadFile, limit: int) -> bytes:
 
 # ==================== Listing ====================
 
-@router.get("/", response_model=list[ItemResponse])
+@router.get("/", response_model=Page[ItemResponse])
 async def list_files(
     folder_id: Optional[UUID] = None,
     limit: int = Query(200, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    cursor: Optional[str] = Query(
+        None,
+        description=(
+            "Opaque pagination cursor returned in ``next_cursor`` from a "
+            "previous response.  When omitted, the first page is returned."
+        ),
+    ),
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    List folder + file items in a directory (Phase 4.5: cursor-paginated).
+
+    Folders are returned first (sorted by name), then files (also by
+    name).  ``next_cursor`` is ``null`` when the listing is exhausted.
+    """
+    try:
+        parsed_cursor = Cursor.try_decode(cursor)
+    except CursorError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid cursor: {exc}"
+        ) from exc
+
     file_svc = FileService(db)
     folder_svc = FolderService(db)
 
-    folders = await folder_svc.list_folders(user_id, folder_id, limit=limit, offset=offset)
-    files = await file_svc.list_files(user_id, folder_id, limit=limit, offset=offset)
+    folders, f_next = await folder_svc.list_folders_page(
+        user_id, folder_id, limit=limit, cursor=parsed_cursor
+    )
+    files, _files_next = await file_svc.list_files_page(
+        user_id, folder_id, limit=limit, cursor=parsed_cursor
+    )
 
     items: list[ItemResponse] = []
     for f in folders:
@@ -83,7 +111,13 @@ async def list_files(
             mime_type=f.mime_type, parent_id=f.folder_id,
             created_at=f.created_at, updated_at=f.updated_at,
         ))
-    return items
+
+    # If either side has more, surface a non-null cursor.  In practice
+    # both lists use the same cursor so the second pass uses the *file*
+    # side's continuation; we return the file cursor since the file
+    # list is always the "later" one in the response order.
+    next_cursor = f_next
+    return Page[ItemResponse](items=items, next_cursor=next_cursor)
 
 
 # ==================== Upload ====================
@@ -97,6 +131,16 @@ async def list_files(
 async def upload_file(
     file: UploadFile,
     folder_id: Optional[UUID] = None,
+    on_conflict: str = Query(
+        "reject",
+        pattern="^(reject|rename)$",
+        description=(
+            "What to do when a file with the same name already exists in "
+            "the target folder. ``reject`` returns 409 with a suggested "
+            "name; ``rename`` silently appends ``(1)``, ``(2)``... to "
+            "the uploaded filename."
+        ),
+    ),
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -110,6 +154,7 @@ async def upload_file(
         raw_filename=file.filename,
         content_type=file.content_type,
         file_data=data,
+        on_conflict=on_conflict,
     )
 
 
@@ -153,6 +198,49 @@ async def download_file(
         stream_iter,
         media_type=file.mime_type or "application/octet-stream",
         headers=headers,
+    )
+
+
+# ==================== Bulk operations (Phase 4.6) ====================
+
+@router.post(
+    "/bulk-delete",
+    response_model=BulkOperationResult,
+    dependencies=[Depends(rate_limit(POLICY_DELETE))],
+)
+async def bulk_delete_files(
+    payload: BulkDeleteRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-delete up to ``MAX_BULK_ITEMS`` files in a single call."""
+    file_svc = FileService(db)
+    succeeded, errors = await file_svc.bulk_delete(payload.ids, user_id)
+    return BulkOperationResult(
+        succeeded=succeeded,
+        failed=len(errors),
+        errors=errors,
+    )
+
+
+@router.post(
+    "/bulk-move",
+    response_model=BulkOperationResult,
+)
+async def bulk_move_files(
+    payload: BulkMoveRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move up to ``MAX_BULK_ITEMS`` files to ``folder_id`` (``null`` = root)."""
+    file_svc = FileService(db)
+    succeeded, errors = await file_svc.bulk_move(
+        payload.ids, user_id, payload.folder_id
+    )
+    return BulkOperationResult(
+        succeeded=succeeded,
+        failed=len(errors),
+        errors=errors,
     )
 
 

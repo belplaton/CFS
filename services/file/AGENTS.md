@@ -63,7 +63,7 @@ services/file/
 | Restore | MinIO `copy_object` trash/ → files/ (new uuid!) + DB `deleted_at = NULL` |
 | Cross-tenant | Все queries с `WHERE user_id = :uid AND deleted_at IS NULL` |
 | Folder cycles | BFS по `parent_id` chain, fail-fast |
-| JWT | `type=access` required; `iss`/`aud` если заданы |
+| JWT | `type=access` + `iss=auth-service` + `aud=cloud-storage` required; `sub` = UUID |
 | Download | `StreamingResponse` прокси, `Content-Disposition: filename*=UTF-8''...` |
 
 ---
@@ -151,11 +151,11 @@ CREATE INDEX idx_files_deleted_at ON files(deleted_at);
 | 2.10 | **Idempotency-Key** для upload (Redis cache, body fingerprint, 409 on mismatch) | `middleware/idempotency.py` 🆕 | ✅ |
 | 2.11 | Split schemas: `schemas/{file,folder,trash,search,common}.py` | `schemas/` | ✅ |
 | 2.12 | Repository pattern: `FileRepository` + `FolderRepository`; все DB queries в `repositories/` | `repositories/` 🆕 | ✅ |
-| 2.13 | **Cross-service: user_id int↔UUID** — синхронизировать с Auth командой | `dependencies.py` (уже есть fallback с WARNING) | 📋 (XL) |
-| 2.14 | **Cross-service: JWT iss/aud/type=access** — добавить в Auth service | `auth/utils/security.py` | 📋 (XL) |
+| 2.13 | **Cross-service: user_id int↔UUID** — синхронизировать с Auth командой | `dependencies.py` (coerce-код удалён в Phase 3) | ✅ РЕШЕНО в Phase 3 |
+| 2.14 | **Cross-service: JWT iss/aud/type=access** — добавить в Auth service | `config.py:jwt_issuer/audience` (default), `dependencies.py` валидирует все три | ✅ РЕШЕНО в Phase 3 |
 | 2.15 | Тесты Phase 2: request_id; rate limit; health-check; audit; structlog | `tests/test_phase2.py` 🆕 (11 unit) | ✅ |
 
-**Итог Phase 2:** 13/15 done, осталось 2.13/2.14 (XL, требует команду Auth).
+**Итог Phase 2:** 15/15 done (после Phase 3 закрыл cross-service долги 2.13/2.14).
 
 #### 2.12 Repository pattern
 - `src/repositories/__init__.py` реэкспортит `FileRepository` и `FolderRepository`.
@@ -196,11 +196,14 @@ CREATE INDEX idx_files_deleted_at ON files(deleted_at);
 - На повторе: возвращает кэшированный ответ (200); на body mismatch: 409 Conflict.
 - Fingerprint = `sha256(body)`. Ключ = `idemp:{user_id}:{key}`.
 
+#### 2.13 Access log middleware (Phase 3)
+- `AccessLogMiddleware` эмитит `http.request` structlog-event с `method`, `path`, `status_code`, `duration_ms`, `request_id`, `client_ip`, `user_agent`, `service`.
+- Запросы медленнее `slow_request_threshold_ms` (default 1000) эмитятся как `http.request_slow`.
+- `/health`, `/docs`, `/redoc`, `/openapi.json` исключены из access log (слишком шумно).
+- **Критично:** значения читаются из `request.state.request_id` / `request.state.request_meta`, а не из contextvar. Причина: `BaseHTTPMiddleware` сбрасывает contextvar в finally внутреннего middleware ДО того, как внешний finally прочитает. `request.state` живёт весь request lifecycle.
+- Зеркальный middleware в auth-service.
+
 ---
-
-## 🐛 Технические тонкости
-
-### `get_db` и транзакции
 `get_db` использует `session.commit()` в finally. Это означает, что **все** операции внутри endpoint'а — в одной outer-транзакции. Advisory lock берётся внутри неё и освобождается при commit/rollback. Это правильное поведение, но при рефакторе нужно помнить.
 
 ### `expire_on_commit=False`
@@ -219,15 +222,79 @@ Phase 1 читает весь файл в память (`b"".join(chunks)`) — 
 
 ## 🚧 Известные ограничения Phase 1
 
-1. **Streaming читает всё в RAM** (до 100 МБ). Phase 4 — multipart.
-2. **Magic bytes не проверяются** — `content_type` берётся из заголовка. Phase 4 — `python-magic`.
-3. **Каскадный soft-delete папок** — не реализован. Phase 4.
-4. **Quota для premium** — Phase 4 (запрос к Auth).
-5. **Multipart upload** — Phase 4.
-6. **Rate limiting** — Phase 2.
-7. **Alembic** — Phase 2.
-8. **Audit log** — Phase 2.
-9. **Magic-bytes / контент-sniffing** — Phase 4.
+1. ~~Streaming читает всё в RAM~~ — оставлено (до 100 МБ лимит; multipart отложен в Phase 5).
+2. ~~Magic bytes не проверяются~~ — оставлено (Phase 5, `python-magic`).
+3. ~~Каскадный soft-delete папок~~ — ✅ РЕШЕНО в Phase 4.1.
+4. ~~Quota для premium~~ — ✅ РЕШЕНО в Phase 4.3.
+5. ~~Rate limiting~~ — Phase 2.
+6. ~~Alembic~~ — Phase 2.
+7. ~~Audit log~~ — Phase 2.
+8. ~~Access log middleware~~ — Phase 3.
+
+---
+
+## 📊 Phase 4 — прогресс (Фичи и UX-края)
+
+| # | Задача | Файл | Статус |
+|---|---|---|---|
+| 4.1 | **Recursive trash** — каскадное soft-delete папки + MinIO move для всех файлов в поддереве | `folder_service.py:delete_folder` (BFS по `parent_id`) | ✅ |
+| 4.2 | **TTL cleanup** — APScheduler cron hard-delete файлов старше `trash_retention_days` (default 30) | `services/trash_cleanup_service.py` 🆕, `scheduler.py` 🆕 | ✅ |
+| 4.3 | **Premium quota** — REST `GET /api/users/{id}/quota` (Auth) + 60s TTL cache + fail-open | `utils/auth_client.py` 🆕, `quota_service.py:get_storage_quota` | ✅ |
+| 4.4 | **Conflict detection** — `FileNameConflict` (409) с `suggested_name`; `?on_conflict=rename` auto | `utils/conflict.py` 🆕, `exceptions.py:FileNameConflict` | ✅ |
+| 4.5 | **Cursor-based pagination** — base64-json `(name, id)` курсоры, `Page[T]` schema | `utils/cursor.py` 🆕, `schemas/common.py:Page`, `repositories/*:list_in_folder_after` | ✅ |
+| 4.6 | **Bulk operations** — `POST /api/files/bulk-delete`, `/bulk-move` (до 200 ids) с per-id error reporting | `schemas/bulk.py` 🆕, `file_service.py:bulk_delete/bulk_move`, `api/files.py` | ✅ |
+| 4.7 | Idempotency-Key для upload | `middleware/idempotency.py` | ✅ (Phase 2.10) |
+
+**Итог Phase 4:** 6/6 done (4.7 закрыт в Phase 2).
+
+### Phase 4 — детали реализации
+
+#### 4.1 Recursive trash
+- `FolderService.delete_folder` использует BFS через `FolderRepository.list_child_ids` для сбора поддерева (`subtree: list[UUID]`).
+- Step 1: BFS по `parent_id` chain, защита от corrupted tree через `_MAX_ANCESTOR_HOPS=1000` (тот же лимит что в cycle detection).
+- Step 2: bulk `UPDATE folders SET deleted_at = now() WHERE id IN (subtree)`.
+- Step 3: для каждого файла в поддереве — `MinIO copy_object files/ → trash/` (best-effort, при failure остаётся в DB) + `UPDATE files SET deleted_at = now(), minio_object_id = new_key`.
+- Audit: один event для root folder + по одному на каждую cascaded папку/файл с `extra={"via_cascade": root_id}`.
+- **Orphan safety:** если MinIO move падает, DB всё равно отмечает файл как deleted — TTL cleanup (Phase 4.2) подберёт orphan на следующем тике.
+
+#### 4.2 TTL cleanup
+- `services/trash_cleanup_service.py:TrashCleanupService.run_once(now=None, batch_size=500)`.
+- Cutoff = `now - settings.trash_retention_days` (default 30 дней).
+- Files: SELECT batch WHERE `deleted_at < cutoff AND deleted_permanently = False`, set `deleted_permanently = True`, MinIO remove (best-effort).
+- Folders: hard DELETE (без soft-undelete marker; cascade в 4.1 уже обработал файлы).
+- Scheduler: `src/scheduler.py:build_scheduler()` — `AsyncIOScheduler` + `CronTrigger.from_crontab(settings.trash_cleanup_cron)` (default `"17 3 * * *"`).
+- В `main.py:lifespan` — start на boot, shutdown на stop.
+- **Не реализует leader election** — в multi-replica deployment включить coalesce или external lock; DELETE идемпотентен.
+
+#### 4.3 Premium quota
+- New endpoint в Auth: `GET /api/users/{user_id}/quota` (`api/users.py`).
+- Защищён `X-API-Key` (не user JWT) — service-to-service.
+- `User` уже имел `storage_quota` + `used_storage` columns; добавлен `tier` heuristic: `quota > default` → `"premium"`, иначе `"free"`.
+- File service: `utils/auth_client.py:fetch_quota(user_id)` — 60s in-memory TTL cache, httpx с 2s timeout, **fail-open** на `settings.default_storage_quota` если Auth недоступен.
+- `file_service.upload_file` вызывает `auth_client.invalidate(user_id)` после успешного insert (следующий read увидит свежие цифры).
+- Cache scoped to process — multi-replica deployment получает N×60s latency hit на cache miss, что приемлемо.
+
+#### 4.4 Conflict detection
+- `exceptions.py:FileNameConflict(409)` с `suggested_name` в `extra` (попадает в 409 body).
+- `utils/conflict.py:find_available_name(db, user_id, folder_id, desired)` — один SELECT `SELECT name FROM files WHERE folder_id=?`, потом Python-loop от 1 до 1000 для `(1)`, `(2)`, ...
+- `suggest_rename(desired)` — DB-free helper, используется для подсказки в 409 body.
+- `?on_conflict=reject|rename` query param (Pydantic `pattern="^(reject|rename)$"`).
+- Strip существующего `(N)` суффикса при continuation: `report (1).pdf` + conflict → `report (2).pdf`, не `report (1) (1).pdf`.
+
+#### 4.5 Cursor pagination
+- `utils/cursor.py:Cursor(name, id).encode() / .decode()` — base64-urlsafe(json).
+- `Page[T] = {items: list[T], next_cursor: str | None}` (Pydantic generic).
+- Repository методы `list_in_folder_after(db, ..., cursor, limit)` используют `tuple_(name, id) > (?, ?)` для index-friendly range scan.
+- Service `list_*_page(..., limit)` — fetch `limit+1`, если есть лишний — last returned = next cursor.
+- `list_files` endpoint теперь возвращает `Page[ItemResponse]`, валидирует cursor через `Cursor.try_decode` (400 на malformed).
+- **BREAKING:** `GET /api/files/` ранее возвращал `list[ItemResponse]`, теперь `Page[ItemResponse]`. Клиент-frontend должен обновить парсинг.
+
+#### 4.6 Bulk operations
+- `schemas/bulk.py:MAX_BULK_ITEMS=200` — жёсткий cap, выше клиент должен chunk-ить.
+- `BulkOperationResult{succeeded, failed, errors: {id: reason}}` — per-id error reporting, не аборт на первой ошибке.
+- `file_service.bulk_delete` и `bulk_move` — try/except per id, возвращают `(succeeded, errors)`.
+- Endpoints защищены rate limit (`POLICY_DELETE` для delete; move пока без лимита — Phase 5).
+- `permanent_delete` НЕ включён в bulk — слишком деструктивно без явного `?force=true`.
 
 ---
 
@@ -238,3 +305,40 @@ Phase 1 читает весь файл в память (`b"".join(chunks)`) — 
 3. Известные баги (если появляются)
 4. API changes (новые endpoints, изменённые сигнатуры)
 5. Whitelist/config изменения
+
+---
+
+## 🛑 Сессия 2026-06-03 — Phase 4 завершена
+
+**Выполнено за сессию:** 6/6 (4.1 Recursive trash, 4.2 TTL cleanup, 4.3 Premium quota, 4.4 Conflict detection, 4.5 Cursor pagination, 4.6 Bulk operations).
+
+**Решения, которые нужно помнить:**
+
+1. **Conflict resolution** — `?on_conflict=reject|rename`. На reject возвращаем 409 с `extra.suggested_name` (DB-free regex hint). На rename используем `find_available_name` с одним SELECT + Python loop до 1000 attempts. Strip существующего `(N)` суффикса для continuation.
+
+2. **Cursor pagination** — base64-urlsafe JSON `{name, id}`. Repository использует `tuple_(name, id) > (?, ?)` для index-friendly range scan. **BREAKING:** `GET /api/files/` теперь возвращает `Page[ItemResponse]`, frontend должен обновить парсинг.
+
+3. **Bulk operations** — per-id try/except, `MAX_BULK_ITEMS=200`. Результат `{succeeded, failed, errors: {id: reason}}`. `permanent_delete` НЕ bulk-friendly (требует `?force=true` — Phase 5).
+
+4. **Recursive trash (4.1)** — BFS по `parent_id` с защитой от corrupted trees (`_MAX_ANCESTOR_HOPS=1000`). MinIO move best-effort (DB = source of truth, TTL reaper подберёт orphan).
+
+5. **TTL cleanup (4.2)** — APScheduler AsyncIOScheduler + CronTrigger. `deleted_permanently=True` ставится ДО MinIO remove (не requeue на следующий tick). Folders hard DB-deleted. Coalesce=True для multi-replica (DELETE идемпотентен). Endpoint `trash_cleanup_enabled` для env-disable в тестах.
+
+6. **Premium quota (4.3)** — Auth `GET /api/users/{user_id}/quota` с X-API-Key gate. `tier` — heuristic `quota > default`. File service: 60s in-memory cache, fail-open на default при недоступности Auth. Cache invalidation в `file_service.upload_file` после успешного insert.
+
+7. **Cross-middleware ContextVar fix (Phase 3, остаётся в силе)** — `RequestID` и `RequestMeta` пишут в `request.state.{request_id,request_meta}` для outer consumers, ContextVars оставлены для service-layer (audit_service). BaseHTTPMiddleware сбрасывает inner ContextVar в finally ДО outer finally читает.
+
+8. **Rate limit fixed-window (deviation)** — оставлено vs ROADMAP "token bucket". Обоснование: для abuse-stopper достаточно, граница окна даёт ≤2×limit на стыке, token bucket нужен только при burst-bandwidth SLA.
+
+**Smoke-test состояние на конец сессии:**
+- file: 27 routes, ruff ✅, 15 passed + 34 skipped (testcontainers требует Docker).
+- auth: 13 routes, ruff ✅.
+
+**Что осталось на Phase 5:**
+- Unit/integration тесты для 4.1–4.6 (по 2-3 на подзадачу, без testcontainers).
+- CI pipeline (ruff + pytest + alembic).
+- Load testing (upload, bulk, cursor).
+- OpenAPI examples.
+- Security tests на bulk ops (rate limit, MAX_BULK_ITEMS enforcement).
+- `rate_limit(WRITE)` на PUT/PATCH (rename, move) — долг #8.
+- Auth logout + Redis revocation list — долг #7.

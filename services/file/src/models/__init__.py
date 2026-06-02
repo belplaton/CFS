@@ -30,6 +30,9 @@ engine = create_async_engine(
 )
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# Re-export under a friendlier name — the scheduler module needs an
+# explicit factory to run outside the FastAPI request lifecycle.
+async_session_factory = async_session
 
 
 async def get_db():

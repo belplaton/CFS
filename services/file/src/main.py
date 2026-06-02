@@ -14,7 +14,13 @@ from fastapi import FastAPI
 from src.api import api_router
 from src.api.exception_handlers import register_exception_handlers
 from src.config import settings
-from src.middleware import IdempotencyMiddleware, RequestIDMiddleware, RequestMetaMiddleware
+from src.middleware import (
+    AccessLogMiddleware,
+    IdempotencyMiddleware,
+    RequestIDMiddleware,
+    RequestMetaMiddleware,
+)
+from src.scheduler import build_scheduler, shutdown_scheduler
 from src.utils.logging import configure_logging, get_logger
 from src.utils.rate_limiter import close_redis
 
@@ -26,9 +32,13 @@ logger = get_logger("file-service")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("file_service.starting", env=settings.env, version="1.1.0")
-    yield
-    await close_redis()
-    logger.info("file_service.shutting_down")
+    build_scheduler()
+    try:
+        yield
+    finally:
+        await shutdown_scheduler()
+        await close_redis()
+        logger.info("file_service.shutting_down")
 
 
 app = FastAPI(
@@ -42,6 +52,11 @@ app = FastAPI(
 
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(RequestMetaMiddleware)
+# AccessLog sits *inside* RequestID/RequestMeta so it can read their
+# contextvars, and *outside* Idempotency so the latter's short-circuit
+# still produces an access-log line.  Starlette applies add_middleware
+# in reverse: the last call wraps the route, the first is outermost.
+app.add_middleware(AccessLogMiddleware)
 # Idempotency must wrap routes from the inside — Starlette applies
 # middlewares in reverse order of ``add_middleware`` calls, so this
 # runs before the request reaches the handler and after the response

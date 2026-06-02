@@ -34,6 +34,18 @@ class Settings(BaseSettings):
     default_storage_quota: int = 5 * 1024 * 1024 * 1024          # 5 GB
     premium_storage_quota: int = 100 * 1024 * 1024 * 1024        # 100 GB
 
+    # ==================== Trash TTL (Phase 4.2) ====================
+    # How long a soft-deleted file lives in trash before the cleanup
+    # job hard-deletes it.  30 days matches typical consumer cloud
+    # storage retention.
+    trash_retention_days: int = 30
+    # Cron expression for the cleanup job.  Default = 03:17 every day.
+    trash_cleanup_cron: str = "17 3 * * *"
+    # Master switch: when ``False`` the scheduler is still built but
+    # no jobs are registered.  Useful for unit tests and one-off
+    # containers that should not run a background tick.
+    trash_cleanup_enabled: bool = True
+
     # ==================== Upload limits (Phase 1: security) ====================
     # Hard cap for a single uploaded object.
     max_upload_size: int = 100 * 1024 * 1024                     # 100 MB (per ROADMAP)

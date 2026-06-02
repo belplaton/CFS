@@ -71,6 +71,24 @@ class UserResponse(UserBase):
     last_login: Optional[datetime] = None
 
 
+# ==================== Quota (Phase 4.3) ====================
+
+
+class QuotaResponse(BaseModel):
+    """Per-user storage quota returned by ``GET /users/{id}/quota``.
+
+    Consumed by the file service to decide whether an upload fits
+    the user's plan.  ``tier`` is a free-form string (``"free"`` /
+    ``"premium"``) so the auth service can introduce new tiers
+    without a breaking change.
+    """
+
+    user_id: UUID
+    tier: str = "free"
+    storage_quota: int
+    used_storage: int
+
+
 # ==================== Verification Schemas ====================
 
 

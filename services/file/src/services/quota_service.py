@@ -1,9 +1,9 @@
 """
 Quota service — storage limit checks and atomic reservations.
 
-Phase 1 implementation: all users share the default quota tier. The hook
-for a premium tier is already in place via ``get_storage_quota`` so that
-Phase 2 only has to swap in a call to the Auth service.
+Phase 1 implementation: all users share the default quota tier.
+Phase 4.3 swaps in an Auth-service call (see :mod:`src.utils.auth_client`)
+so premium users get the larger quota configured in Auth.
 
 The race-condition fix is the important bit: we use a Postgres
 ``pg_advisory_xact_lock`` keyed on ``user_id`` so that two concurrent
@@ -17,8 +17,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config import settings
 from src.exceptions import QuotaExceeded
+from src.utils import auth_client
 from src.utils.logging import get_logger
 
 
@@ -27,14 +27,17 @@ logger = get_logger(__name__)
 
 # ==================== Quota tier ====================
 
-async def get_storage_quota(_user_id: UUID) -> int:
+async def get_storage_quota(user_id: UUID) -> int:
     """
-    Return the quota in bytes for the given user.
+    Return the quota in bytes for the given user (Phase 4.3).
 
-    Phase 1 always returns the default tier. Phase 2 will call the Auth
-    service to resolve a per-user ``subscription`` (free / premium).
+    Calls the Auth service via :mod:`src.utils.auth_client` which
+    caches the answer for 60 s.  When Auth is unreachable, the
+    client falls back to ``settings.default_storage_quota`` —
+    fail-open is the chosen trade-off (see auth_client docstring).
     """
-    return settings.default_storage_quota
+    info = await auth_client.fetch_quota(user_id)
+    return info.storage_quota
 
 
 # ==================== Atomic reservation ====================

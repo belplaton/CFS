@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     # ==================== CORS ====================
     cors_origins: str = "http://localhost:8080"
 
+    # ==================== Redis (rate limiting, refresh revocation) ====================
+    # When unset the rate limiter falls back to a no-op stub
+    # (``utils/redis_client.py``) — the auth endpoints stay available
+    # but are not protected from brute force.  Always set this in
+    # production.
+    redis_url: Optional[str] = None
+
     # ==================== Service-to-service auth ====================
     service_api_key: str  # No default — must be set in env
 

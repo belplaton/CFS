@@ -31,6 +31,9 @@ structlog==24.1.0
 # Redis (rate limiting, idempotency cache)
 redis==5.0.4
 
+# Scheduled jobs (trash TTL cleanup, Phase 4.2)
+APScheduler==3.10.4
+
 # Testing
 pytest==8.0.0
 pytest-asyncio==0.23.5

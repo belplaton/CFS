@@ -32,23 +32,26 @@
 | Phase | Статус | Фокус |
 |---|---|---|
 | **1 — Security & Hardening** | ✅ Все 15 задач | Валидация, JWT, quota race, циклы, presigned URL, streaming |
-| **2 — Reliability + Observability** | ✅ 13/15 (2.13, 2.14 — cross-service, требуют команду) | Alembic, structlog+request_id, audit log, rate limit, health-check, idempotency, Caddy headers, split schemas, repository pattern, Phase 2 unit tests |
-| **3 — Observability + Operations** | 📋 | Health-checks (liveness/readiness split), cron-очистка корзины |
-| **4 — Фичи и UX-края** | 📋 | Multipart upload, magic-bytes, каскад папок, premium quota, pagination |
+| **2 — Reliability + Observability (file)** | ✅ 15/15 | Alembic, structlog+request_id, audit log, rate limit, health-check, idempotency, Caddy headers, split schemas, repository pattern, Phase 2 unit tests |
+| **3 — Observability + Operations (cross-service)** | ✅ Все 12 задач | UUID PK, Alembic, structlog, health-check, JWT iss/aud/type, repository pattern, rate limiting, exception handlers, **access log middleware** |
+| **4 — Фичи и UX-края** | ✅ 6/6 | Recursive trash, TTL cleanup, premium quota, conflict detection, pagination, bulk ops, ~~idempotency~~ |
 | **5 — Качество** | 📋 | CI, security tests, load testing, OpenAPI examples |
 
 ---
 
 ## 🚨 Известные долги (cross-service)
 
-| # | Проблема | Где | Что делать |
-|---|---|---|---|
-| **1** | Auth Service хранит `user_id = Integer`, File Service — `UUID` | `services/auth/src/models/user.py:15` ↔ `services/file/src/models/file.py:18` | Коэрсия в `dependencies.py:58` с WARNING. Решить: мигрировать Auth на UUID или ввести общий id-namespace |
-| **2** | Auth service НЕ выдаёт `iss` / `aud` / `type=access` claim-ы в refresh-токенах одинаково | `services/auth/src/utils/security.py:31-51` | Согласовать JWT payload между сервисами |
-| **3** | File-service не различает free / premium подписку | `services/file/src/services/quota_service.py:get_storage_quota` | Phase 4: вызов Auth `/users/{id}/quota` |
-| **4** | Нет Alembic — схема через `create_all` | `services/file/src/models/__init__.py:init_db` | Phase 2: первая миграция, отказ от `create_all` |
-| **5** | `declarative_base()` deprecated → `DeclarativeBase` | `services/file/src/models/__init__.py:14` и `services/auth/src/models/__init__.py` | Phase 2: миграция на SQLAlchemy 2.0 style |
-| **6** | `class Config` deprecated в Pydantic v2 → `ConfigDict` | `services/file/src/config.py:81`, `services/file/src/schemas/__init__.py:32,48,97` | Phase 2: глобальный рефактор |
+| # | Проблема | Где | Статус | Что делать |
+|---|---|---|---|---|
+| **1** | ~~Auth Service хранит `user_id = Integer`, File Service — `UUID`~~ | `services/auth/src/models/user.py` ↔ `services/file/src/models/file.py` | ✅ РЕШЕНО в Phase 3 | Auth мигрирован на `Mapped[UUID]`, coerce-код в file `dependencies.py:58` удалён. Breaking change: `UserResponse.id` теперь UUID |
+| **2** | ~~Auth service НЕ выдаёт `iss` / `aud` / `type=access` claim-ы в refresh-токенах одинаково~~ | `services/auth/src/utils/security.py` | ✅ РЕШЕНО в Phase 3 | Все токены содержат `iss=auth-service`, `aud=cloud-storage`, `type=access`/`refresh`. File service валидирует все три |
+| **3** | ~~File-service не различает free / premium подписку~~ | `services/file/src/services/quota_service.py:get_storage_quota` | ✅ РЕШЕНО в Phase 4.3 | `auth_client.fetch_quota()` ходит в Auth `/api/users/{id}/quota`, 60s TTL cache, fail-open на default |
+| **4** | ~~Нет Alembic — схема через `create_all`~~ | `services/file/src/models/__init__.py:init_db` | ✅ РЕШЕНО в Phase 2 | `alembic upgrade head` через Docker entrypoint, lifespan не делает create_all |
+| **5** | ~~`declarative_base()` deprecated → `DeclarativeBase`~~ | `services/file/src/models/__init__.py` ↔ `services/auth/src/models/__init__.py` | ✅ РЕШЕНО в Phase 2/3 | `DeclarativeBase` + `Mapped[]` + `mapped_column()` в обоих сервисах |
+| **6** | ~~`class Config` deprecated в Pydantic v2 → `ConfigDict`~~ | `services/file/src/config.py` + `services/auth/src/config.py` | ✅ РЕШЕНО в Phase 2/3 | Глобальный рефактор выполнен |
+| **7** | Auth service пока не проверяет refresh-токены при logout / revocation list | `services/auth/src/api/auth.py:101-108` | 📋 Phase 5 | Реализовать Redis blacklist + jti claims |
+| **8** | В File service не подключён rate limit к /api/files/{id}/rename, /move | `services/file/src/api/files.py` | 📋 Phase 5 | Применить `rate_limit(WRITE)` к PUT/PATCH |
+| **9** | **Deviation:** Rate limit использует fixed-window, ROADMAP говорит "token bucket" | `services/file/src/utils/rate_limiter.py:2` | 📋 Документировано | Принято решение: fixed-window достаточно для abuse-stopper; token bucket только если измеренные паттерны покажут burst abuse |
 
 ---
 

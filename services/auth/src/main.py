@@ -11,9 +11,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api import api_router
+from src.api.exception_handlers import install_exception_handlers
 from src.config import settings
-from src.middleware import RequestIDMiddleware
+from src.middleware import AccessLogMiddleware, RequestIDMiddleware
 from src.utils.logging import configure_logging, get_logger
+from src.utils.redis_client import close_redis
 
 
 configure_logging(env=settings.env, level=settings.log_level)
@@ -24,6 +26,7 @@ logger = get_logger("auth-service")
 async def lifespan(app: FastAPI):
     logger.info("auth_service.starting", env=settings.env, version="1.1.0")
     yield
+    await close_redis()
     logger.info("auth_service.shutting_down")
 
 
@@ -37,8 +40,10 @@ app = FastAPI(
 )
 
 # Order matters: RequestID must wrap everything else so every log
-# line carries the correlation id.
+# line carries the correlation id.  AccessLog sits inside RequestID
+# so it can read the request id from the contextvar.
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(AccessLogMiddleware)
 # CORS is normally enforced by the API gateway (Caddy) — this is
 # only useful when the service is run standalone (e.g. integration
 # tests).  Origins are configurable via ``CORS_ORIGINS``.
@@ -51,6 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+install_exception_handlers(app)
 
 
 if __name__ == "__main__":

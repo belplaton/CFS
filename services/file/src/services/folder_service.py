@@ -16,7 +16,13 @@ from src.exceptions import CycleDetected, FolderNotFound
 from src.models.folder import Folder
 from src.repositories.folder import FolderRepository
 from src.services import audit_service
+from src.utils import minio_client
+from src.utils.cursor import Cursor
+from src.utils.logging import get_logger
 from src.utils.validators import sanitize_filename
+
+
+logger = get_logger(__name__)
 
 
 # Guard against pathologically deep folder chains.
@@ -47,6 +53,35 @@ class FolderService:
                 self.db, user_id, parent_id, limit=limit, offset=offset
             )
         )
+
+    async def list_folders_page(
+        self,
+        user_id: UUID,
+        parent_id: UUID | None,
+        *,
+        limit: int = 200,
+        cursor: Cursor | None = None,
+    ) -> tuple[list[Folder], str | None]:
+        """Cursor-paginated variant of :meth:`list_folders` (Phase 4.5)."""
+        fetch = limit + 1
+        if cursor is None:
+            rows = list(
+                await FolderRepository.list_in_folder(
+                    self.db, user_id, parent_id, limit=fetch, offset=0
+                )
+            )
+        else:
+            rows = list(
+                await FolderRepository.list_in_folder_after(
+                    self.db, user_id, parent_id, cursor, limit=fetch
+                )
+            )
+        next_cursor: str | None = None
+        if len(rows) > limit:
+            rows = rows[:limit]
+            last = rows[-1]
+            next_cursor = Cursor(name=last.name, id=last.id).encode()
+        return rows, next_cursor
 
     # ==================== Create / rename / move / delete ====================
 
@@ -111,19 +146,122 @@ class FolderService:
         )
 
     async def delete_folder(self, folder_id: UUID, user_id: UUID) -> None:
+        """
+        Soft-delete a folder and cascade to every descendant (Phase 4.1).
+
+        The cascade runs in three steps inside the caller's transaction:
+
+        1. BFS-walk the folder subtree (folder → children → grandchildren).
+        2. Mark every visited folder ``deleted_at = now()``.
+        3. Move every active file's MinIO object to ``trash/`` and
+           mark the row ``deleted_at = now()``.
+
+        Step 3 runs *after* step 2 so the file list query is bounded
+        to the cascade set.  The MinIO copy is best-effort: a failure
+        is logged but does not roll back the DB-side delete, because
+        the TTL cleanup (Phase 4.2) will pick up the orphan on its
+        next pass.  The DB row is the source of truth, not the bucket.
+        """
+        from src.config import settings
+
         folder = await self.get_folder(folder_id, user_id)
-        folder_name = folder.name
-        folder.deleted_at = func.now()
+        root_name = folder.name
+        root_id = folder.id
+
+        # 1. Collect the entire subtree (root + every descendant).
+        subtree: list[UUID] = [root_id]
+        frontier: list[UUID] = [root_id]
+        hops = 0
+        while frontier:
+            children = await FolderRepository.list_child_ids(
+                self.db, frontier, user_id
+            )
+            if not children:
+                break
+            subtree.extend(children)
+            frontier = children
+            hops += 1
+            if hops > _MAX_ANCESTOR_HOPS:
+                raise CycleDetected(
+                    "Folder hierarchy is too deep to safely cascade"
+                )
+
+        # 2. Mark every folder in the subtree as deleted.
+        for fid in subtree:
+            await self.db.execute(
+                # Use a parameterised UPDATE; reload to keep ORM cache
+                # consistent for the audit step below.
+                Folder.__table__.update()
+                .where(Folder.id == fid)
+                .values(deleted_at=func.now())
+            )
+
+        # 3. Cascade to files: move each object's MinIO key to ``trash/``
+        #    and mark the row deleted.
+        files = list(
+            await FolderRepository.list_active_files_in_folders(
+                self.db, subtree, user_id
+            )
+        )
+        for f in files:
+            ext = minio_client.extract_extension(f.minio_object_id)
+            new_key = minio_client.trash_object_key(user_id, ext)
+            try:
+                minio_client.move(
+                    settings.minio_bucket,
+                    f.minio_object_id,
+                    new_key,
+                    f.mime_type or "application/octet-stream",
+                )
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                logger.warning(
+                    "trash.cascade.minio_failed",
+                    file_id=str(f.id),
+                    user_id=str(user_id),
+                    error=str(exc),
+                )
+                # Reuse a fresh UUID-style key so a later retry does
+                # not collide with a partially-moved object.
+                new_key = f.minio_object_id
+            f.minio_object_id = new_key
+            f.deleted_at = func.now()
+
         await self.db.flush()
+
+        # Audit per-item so the trash log has a row for every deleted
+        # object (root folder + descendants + files).
         await audit_service.record_event(
             self.db,
             actor_id=user_id,
             event="folder.soft_delete",
-            target_id=folder_id,
+            target_id=root_id,
             target_kind="folder",
-            extra={"name": folder_name},
+            extra={
+                "name": root_name,
+                "cascaded_folders": len(subtree) - 1,
+                "cascaded_files": len(files),
+            },
         )
-        # Phase 4: cascade soft-delete to descendants + MinIO objects.
+        for fid in subtree:
+            if fid == root_id:
+                continue
+            await audit_service.record_event(
+                self.db,
+                actor_id=user_id,
+                event="folder.soft_delete",
+                target_id=fid,
+                target_kind="folder",
+                extra={"via_cascade": str(root_id)},
+            )
+        for f in files:
+            await audit_service.record_event(
+                self.db,
+                actor_id=user_id,
+                event="file.soft_delete",
+                target_id=f.id,
+                target_kind="file",
+                extra={"via_cascade": str(root_id)},
+            )
 
     # ==================== Helpers ====================
 

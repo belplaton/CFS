@@ -27,6 +27,8 @@ from src.repositories.folder import FolderRepository
 from src.schemas import FileUploadResponse
 from src.services import audit_service, quota_service
 from src.utils import minio_client
+from src.utils.conflict import find_available_name, suggest_rename
+from src.utils.cursor import Cursor
 from src.utils.logging import get_logger
 from src.utils.validators import (
     sanitize_filename,
@@ -65,6 +67,41 @@ class FileService:
             )
         )
 
+    async def list_files_page(
+        self,
+        user_id: UUID,
+        folder_id: UUID | None,
+        *,
+        limit: int = 200,
+        cursor: Cursor | None = None,
+    ) -> tuple[list[File], str | None]:
+        """
+        Cursor-paginated list (Phase 4.5).
+
+        Fetches ``limit + 1`` rows: if the extra row is present there
+        is at least one more page, and we encode the *last returned*
+        item as the next cursor.
+        """
+        fetch = limit + 1
+        if cursor is None:
+            rows = list(
+                await FileRepository.list_in_folder(
+                    self.db, user_id, folder_id, limit=fetch, offset=0
+                )
+            )
+        else:
+            rows = list(
+                await FileRepository.list_in_folder_after(
+                    self.db, user_id, folder_id, cursor, limit=fetch
+                )
+            )
+        next_cursor: str | None = None
+        if len(rows) > limit:
+            rows = rows[:limit]
+            last = rows[-1]
+            next_cursor = Cursor(name=last.name, id=last.id).encode()
+        return rows, next_cursor
+
     # ==================== Upload ====================
 
     async def upload_file(
@@ -74,6 +111,8 @@ class FileService:
         raw_filename: str | None,
         content_type: str | None,
         file_data: bytes,
+        *,
+        on_conflict: str = "reject",
     ) -> FileUploadResponse:
         """
         Atomically upload a file.
@@ -82,11 +121,12 @@ class FileService:
             1. Sanitize filename + validate extension and MIME.
             2. Enforce size limit.
             3. Verify folder ownership (if given).
-            4. Take a per-user advisory lock and check the quota.
-            5. Stream the bytes into MinIO under a unique key.
-            6. Insert the ``File`` row.
+            4. Resolve name conflicts (``on_conflict="reject"|"rename"``).
+            5. Take a per-user advisory lock and check the quota.
+            6. Stream the bytes into MinIO under a unique key.
+            7. Insert the ``File`` row.
 
-        If step 5 succeeds but step 6 fails, we make a best-effort attempt
+        If step 6 succeeds but step 7 fails, we make a best-effort attempt
         to delete the MinIO object so the storage does not leak.
         """
         # 1. Filename
@@ -113,8 +153,38 @@ class FileService:
         if folder_id is not None:
             await self._assert_folder_owned(folder_id, user_id)
 
-        # 5. Quota reservation — acquires per-user advisory lock
+        # 5. Conflict resolution (Phase 4.4)
+        if on_conflict == "rename":
+            filename = await find_available_name(
+                self.db, user_id, folder_id, filename
+            )
+        else:
+            # Pre-compute a suggestion so the 409 body is useful even
+            # if the DB lookup itself fails.  The find_available_name
+            # call below re-checks against the live set.
+            from src.exceptions import FileNameConflict
+
+            suggestion = suggest_rename(filename)
+            try:
+                filename = await find_available_name(
+                    self.db, user_id, folder_id, filename
+                )
+            except FileNameConflict as exc:
+                # Re-raise with the pre-computed hint.
+                raise FileNameConflict(
+                    str(exc),
+                    suggested_name=suggestion,
+                    extra={"name": filename},
+                ) from exc
+
+        # 6. Quota reservation — acquires per-user advisory lock
         await quota_service.reserve_quota(self.db, user_id, size)
+        # Invalidate the per-user quota cache so the next read reflects
+        # the new usage.  We invalidate *after* reserve_quota — if it
+        # raised, the in-memory cache is still valid.
+        from src.utils import auth_client
+
+        auth_client.invalidate(user_id)
 
         # 6. Upload to MinIO
         object_key = minio_client.files_object_key(user_id, ext)
@@ -313,3 +383,58 @@ class FileService:
         folder = await FolderRepository.get_active(self.db, folder_id, user_id)
         if folder is None:
             raise FolderNotFound("Target folder not found")
+
+    # ==================== Bulk operations (Phase 4.6) ====================
+
+    async def bulk_delete(
+        self,
+        ids: list[UUID],
+        user_id: UUID,
+    ) -> tuple[int, dict[str, str]]:
+        """
+        Soft-delete every file in ``ids`` that belongs to ``user_id``.
+
+        Each id is processed in isolation: a failure on one row does
+        not abort the rest.  Returns ``(succeeded, errors)`` where
+        ``errors`` is a ``{id: reason}`` map.  The whole call runs in
+        the caller-supplied transaction; outer ``get_db`` commits at
+        the end.
+        """
+        from src.exceptions import FileNotFound
+
+        errors: dict[str, str] = {}
+        succeeded = 0
+        for fid in ids:
+            try:
+                # Re-raise FileNotFound as a per-id error so the
+                # remaining ids still get processed.
+                file = await FileRepository.get_active(self.db, fid, user_id)
+                if file is None:
+                    raise FileNotFound("not found or not owned")
+                await self.delete_file(fid, user_id)
+                succeeded += 1
+            except Exception as exc:  # noqa: BLE001 — bulk reports per-id
+                errors[str(fid)] = type(exc).__name__ + ": " + str(exc)
+        return succeeded, errors
+
+    async def bulk_move(
+        self,
+        ids: list[UUID],
+        user_id: UUID,
+        target_folder_id: UUID | None,
+    ) -> tuple[int, dict[str, str]]:
+        """Move every file in ``ids`` to ``target_folder_id``.
+
+        Same per-id isolation as :meth:`bulk_delete`.  Each row's
+        quota/ownership/folder-existence check runs independently so
+        one bad id does not poison the batch.
+        """
+        errors: dict[str, str] = {}
+        succeeded = 0
+        for fid in ids:
+            try:
+                await self.move_file(fid, user_id, target_folder_id)
+                succeeded += 1
+            except Exception as exc:  # noqa: BLE001
+                errors[str(fid)] = type(exc).__name__ + ": " + str(exc)
+        return succeeded, errors

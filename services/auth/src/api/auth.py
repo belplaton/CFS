@@ -11,12 +11,22 @@ from src.schemas import (
 )
 from src.services.user_service import UserService
 from src.utils.dependencies import get_current_user
+from src.utils.rate_limiter import (
+    rate_limit_login,
+    rate_limit_register,
+    rate_limit_password_reset,
+)
 from src.models.user import User
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
-@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=Token,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit_register)],
+)
 async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     """
     Register a new user
@@ -36,7 +46,11 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     return tokens
 
 
-@router.post("/login", response_model=Token)
+@router.post(
+    "/login",
+    response_model=Token,
+    dependencies=[Depends(rate_limit_login)],
+)
 async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     """
     Login with email and password
@@ -50,10 +64,11 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     user = await user_service.authenticate_user(credentials.email, credentials.password)
 
     if not user:
-        # Add artificial delay to mitigate timing attacks
-        # In production, use a proper rate limiter (e.g., slowapi or redis-based)
+        # Add a small constant delay to make timing attacks harder.  The
+        # rate limiter above is the primary defence; the delay is a
+        # secondary mitigation against per-account credential stuffing.
         import asyncio
-        await asyncio.sleep(1)  # Simple delay
+        await asyncio.sleep(1)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -93,7 +108,10 @@ async def refresh_token():
     return {"message": "Refresh token endpoint - to be implemented"}
 
 
-@router.post("/forgot-password")
+@router.post(
+    "/forgot-password",
+    dependencies=[Depends(rate_limit_password_reset)],
+)
 async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     """
     Request password reset
@@ -111,7 +129,10 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
     return {"message": "If email exists, password reset instructions will be sent"}
 
 
-@router.post("/reset-password")
+@router.post(
+    "/reset-password",
+    dependencies=[Depends(rate_limit_password_reset)],
+)
 async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     """
     Reset password using token

@@ -12,10 +12,11 @@ from __future__ import annotations
 from typing import Optional, Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.file import File
+from src.utils.cursor import Cursor
 
 
 class FileRepository:
@@ -90,6 +91,35 @@ class FileRepository:
         return result.scalars().all()
 
     @staticmethod
+    async def list_in_folder_after(
+        db: AsyncSession,
+        user_id: UUID,
+        folder_id: Optional[UUID],
+        cursor: Cursor,
+        *,
+        limit: int = 200,
+    ) -> Sequence[File]:
+        """
+        Cursor-paginated variant of :meth:`list_in_folder`.
+
+        Strict ``>`` on the (name, id) tuple.  The index on
+        ``(user_id, folder_id, deleted_at, name)`` makes this an
+        index-only range scan for typical workloads.
+        """
+        result = await db.execute(
+            select(File)
+            .where(
+                File.user_id == user_id,
+                File.folder_id == folder_id,
+                File.deleted_at.is_(None),
+                tuple_(File.name, File.id) > tuple_(cursor.name, cursor.id),
+            )
+            .order_by(File.name, File.id)
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    @staticmethod
     async def list_trashed(
         db: AsyncSession, user_id: UUID
     ) -> Sequence[File]:
@@ -133,3 +163,51 @@ class FileRepository:
     async def delete(db: AsyncSession, file: File) -> None:
         await db.delete(file)
         await db.flush()
+
+    @staticmethod
+    async def list_existing_names_in_folder(
+        db: AsyncSession,
+        user_id: UUID,
+        folder_id: Optional[UUID],
+    ) -> set[str]:
+        """Return the set of active file names in the folder.
+
+        Used by conflict resolution: one round-trip that pulls only the
+        ``name`` column so the service can find a free disambiguator
+        without N+1 ``SELECT EXISTS`` queries.
+        """
+        result = await db.execute(
+            select(File.name).where(
+                File.user_id == user_id,
+                File.folder_id == folder_id,
+                File.deleted_at.is_(None),
+            )
+        )
+        return {row[0] for row in result.all()}
+
+    @staticmethod
+    async def list_trashed_before(
+        db: AsyncSession,
+        cutoff,
+        *,
+        limit: int = 500,
+    ) -> Sequence[File]:
+        """
+        Return up to ``limit`` soft-deleted files whose ``deleted_at``
+        is older than ``cutoff`` (Phase 4.2 TTL cleanup).
+
+        The caller is expected to *not* filter by user — the cleanup
+        job processes every tenant in a single pass.  We paginate via
+        ``id`` so the call is safe to repeat until the table is empty.
+        """
+        result = await db.execute(
+            select(File)
+            .where(
+                File.deleted_at.isnot(None),
+                File.deleted_at < cutoff,
+                File.deleted_permanently.is_(False),
+            )
+            .order_by(File.id)
+            .limit(limit)
+        )
+        return result.scalars().all()

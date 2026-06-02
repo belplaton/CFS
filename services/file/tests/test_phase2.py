@@ -351,3 +351,136 @@ def test_structlog_console_in_development(capsys: pytest.CaptureFixture) -> None
     # ConsoleRenderer produces key=value style.
     assert "x=1" in out or "x = 1" in out
     slog.clear_contextvars()
+
+
+# ==================== AccessLogMiddleware (Phase 3.2b) ====================
+
+
+def _build_access_app(handler, **mw_kwargs) -> FastAPI:
+    """Build a minimal app wired with the three observability middlewares."""
+    from src.middleware.access_log import AccessLogMiddleware
+
+    app = FastAPI()
+    app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(RequestMetaMiddleware)
+    app.add_middleware(AccessLogMiddleware, **mw_kwargs)
+    app.add_api_route("/echo", handler, methods=["GET"])
+    app.add_api_route("/slow", handler, methods=["GET"])
+    app.add_api_route("/boom", handler, methods=["GET"])
+    return app
+
+
+@pytest.fixture
+def access_log_capture():
+    """
+    Capture every structlog event emitted during the test.
+
+    We can't use ``capsys`` because the access log middleware runs
+    inside an ASGI task; structlog's PrintLoggerFactory captures
+    ``sys.stdout`` at config time, so pytest's stdout replacement is
+    not visible to the logger.
+    """
+    import structlog.testing
+
+    with structlog.testing.capture_logs() as cap:
+        yield cap
+
+
+@pytest.mark.asyncio
+async def test_access_log_emits_event_for_normal_request(access_log_capture) -> None:
+    """A 2xx request produces one ``http.request`` event with the right fields."""
+    from src.utils import logging as slog
+
+    slog.clear_contextvars()
+
+    async def echo() -> dict:
+        return {"ok": True}
+
+    app = _build_access_app(echo)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get(
+            "/echo",
+            headers={"X-Request-ID": "req-abc", "User-Agent": "test/1.0"},
+        )
+    assert r.status_code == 200
+    assert r.headers.get("x-request-id") == "req-abc"
+
+    events = [e for e in access_log_capture if e.get("event") == "http.request"]
+    assert len(events) == 1
+    evt = events[0]
+    assert evt["method"] == "GET"
+    assert evt["path"] == "/echo"
+    assert evt["status_code"] == 200
+    assert evt["request_id"] == "req-abc"
+    assert evt["service"] == "file-service"
+    assert "duration_ms" in evt
+
+
+@pytest.mark.asyncio
+async def test_access_log_uses_slow_event_above_threshold(access_log_capture) -> None:
+    """A request slower than ``slow_request_threshold_ms`` emits ``http.request_slow``."""
+    import asyncio
+
+    async def slow() -> dict:
+        await asyncio.sleep(0.05)
+        return {"ok": True}
+
+    app = _build_access_app(slow, slow_request_threshold_ms=1)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/echo")
+    assert r.status_code == 200
+
+    slow_events = [
+        e for e in access_log_capture if e.get("event") == "http.request_slow"
+    ]
+    assert len(slow_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_access_log_skips_excluded_paths(access_log_capture) -> None:
+    """``/health`` is excluded from the access log."""
+    from src.middleware.access_log import AccessLogMiddleware
+
+    async def health() -> dict:
+        return {"status": "healthy"}
+
+    app = FastAPI()
+    app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(RequestMetaMiddleware)
+    app.add_middleware(AccessLogMiddleware)
+    app.add_api_route("/health", health, methods=["GET"])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/health")
+    assert r.status_code == 200
+    assert access_log_capture == []
+
+
+@pytest.mark.asyncio
+async def test_access_log_emits_warning_on_5xx(access_log_capture) -> None:
+    """A handler exception still triggers an access-log line — ``status_code=500``."""
+    from fastapi import HTTPException
+
+    from src.middleware.access_log import AccessLogMiddleware
+
+    async def boom():
+        raise HTTPException(status_code=500, detail="kapow")
+
+    app = FastAPI()
+    app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(RequestMetaMiddleware)
+    app.add_middleware(AccessLogMiddleware)
+    app.add_api_route("/boom", boom, methods=["GET"])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/boom")
+    assert r.status_code == 500
+
+    events = [
+        e
+        for e in access_log_capture
+        if e.get("event") in ("http.request", "http.request_slow")
+    ]
+    assert len(events) == 1
+    assert events[0]["status_code"] == 500
+    assert events[0]["path"] == "/boom"

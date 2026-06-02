@@ -92,3 +92,31 @@ class ConflictError(DomainError):
     """Generic business conflict (e.g. duplicate name in the same folder)."""
     status_code = 409
     code = "conflict"
+
+
+class FileNameConflict(DomainError):
+    """
+    Raised when an upload would collide with an existing active file
+    in the same folder (Phase 4.4).
+
+    ``suggested_name`` is the first available disambiguator, e.g.
+    ``"report (1).pdf"`` for a conflict on ``"report.pdf"``.  The
+    client can either retry with the suggestion or pass
+    ``?on_conflict=rename`` to have the server pick one automatically.
+    """
+
+    code = "file_name_conflict"
+    status_code = 409
+
+    def __init__(
+        self,
+        detail: Optional[str] = None,
+        *,
+        suggested_name: Optional[str] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        merged = dict(extra or {})
+        if suggested_name is not None:
+            merged.setdefault("suggested_name", suggested_name)
+        super().__init__(detail, extra=merged)
+        self.suggested_name = suggested_name
