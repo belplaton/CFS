@@ -15,12 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.exceptions import (
-    FileNotFound,
-    FolderNotFound,
-    InvalidFileName,
-    PayloadTooLarge,
-)
+from src.exceptions import ConflictError, FileNotFound, FolderNotFound, InvalidFileName, PayloadTooLarge
 from src.models.file import File
 from src.repositories.file import FileRepository
 from src.repositories.folder import FolderRepository
@@ -280,6 +275,19 @@ class FileService:
         file = await FileRepository.get_trashed(self.db, file_id, user_id)
         if file is None:
             raise FileNotFound("File not found in trash")
+        if file.folder_id is not None:
+            folder = await FolderRepository.get_active(self.db, file.folder_id, user_id)
+            if folder is None:
+                raise ConflictError(
+                    "Cannot restore file: original parent folder is missing or still trashed"
+                )
+        existing_names = await FileRepository.list_existing_names_in_folder(
+            self.db, user_id, file.folder_id
+        )
+        if file.name in existing_names:
+            raise ConflictError(
+                f"Cannot restore file '{file.name}': name conflict in target folder"
+            )
         ext = minio_client.extract_extension(file.minio_object_id)
         new_key = minio_client.files_object_key(user_id, ext)
         minio_client.move(

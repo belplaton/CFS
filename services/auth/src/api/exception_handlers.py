@@ -62,7 +62,13 @@ def install_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=exc.status_code,
-            content=_payload(exc.code, exc.message, retry_after=exc.retry_after, limit=exc.limit, window=exc.details.get("window")),
+            content=_payload(
+                exc.code,
+                exc.message,
+                retry_after=exc.retry_after,
+                limit=exc.limit,
+                window=exc.window,
+            ),
             headers={"Retry-After": str(exc.retry_after)},
         )
 

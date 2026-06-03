@@ -57,6 +57,8 @@ class RateLimitError(DomainError):
     def __init__(self, retry_after: int, limit: int, window: int, message: str = ""):
         super().__init__(message or f"Rate limit exceeded: {limit} requests per {window}s")
         self.retry_after = retry_after
+        self.limit = limit
+        self.window = window
 
 
 class ConfigurationError(DomainError):

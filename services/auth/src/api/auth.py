@@ -1,22 +1,26 @@
 """
 Auth API endpoints
 """
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import get_db
+from src.models.user import User
 from src.schemas import (
     UserCreate, UserLogin, Token, UserResponse,
     ForgotPasswordRequest, ResetPasswordRequest
 )
 from src.services.user_service import UserService
-from src.utils.dependencies import get_current_user
+from src.utils.dependencies import get_current_user, security
+from src.utils.security import decode_token
 from src.utils.rate_limiter import (
     rate_limit_login,
     rate_limit_register,
     rate_limit_password_reset,
 )
-from src.models.user import User
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -99,13 +103,69 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token():
+async def refresh_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Refresh access token using refresh token
 
-    TODO: Implement refresh token logic
+    Uses a Bearer refresh token and returns a fresh access/refresh pair.
     """
-    return {"message": "Refresh token endpoint - to be implemented"}
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        payload = decode_token(credentials.credentials)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    if payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    sub = payload.get("sub")
+    if sub is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        user_id = UUID(str(sub))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    user_service = UserService(db)
+    user = await user_service.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not bool(user.is_active):  # type: ignore[arg-type]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user",
+        )
+    return await user_service.create_tokens_for_user(user)
 
 
 @router.post(

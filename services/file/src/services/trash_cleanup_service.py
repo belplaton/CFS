@@ -26,15 +26,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Tuple
 
-from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.models.file import File
 from src.models.folder import Folder
 from src.repositories.file import FileRepository
 from src.repositories.folder import FolderRepository
 from src.services import audit_service
+from src.services.audit_service import SYSTEM_ACTOR_ID
 from src.utils import minio_client
 from src.utils.logging import get_logger
 
@@ -86,14 +85,6 @@ class TrashCleanupService:
             if not rows:
                 break
             for f in rows:
-                # Mark ``deleted_permanently`` first so a partial
-                # failure (MinIO down) does not requeue the same row
-                # on the next tick.
-                await self.db.execute(
-                    update(File)
-                    .where(File.id == f.id)
-                    .values(deleted_permanently=True)
-                )
                 try:
                     minio_client.remove(settings.minio_bucket, f.minio_object_id)
                 except Exception as exc:  # noqa: BLE001
@@ -103,11 +94,12 @@ class TrashCleanupService:
                         key=f.minio_object_id,
                         error=str(exc),
                     )
+                await self.db.delete(f)
             await self.db.flush()
             f_total += len(rows)
             await audit_service.record_event(
                 self.db,
-                actor_id=None,
+                actor_id=SYSTEM_ACTOR_ID,
                 event="trash.expired",
                 target_id=None,
                 target_kind="batch",
@@ -138,7 +130,7 @@ class TrashCleanupService:
             d_total += len(rows)
             await audit_service.record_event(
                 self.db,
-                actor_id=None,
+                actor_id=SYSTEM_ACTOR_ID,
                 event="trash.expired",
                 target_id=None,
                 target_kind="batch",

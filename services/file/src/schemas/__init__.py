@@ -12,7 +12,7 @@ from src.schemas.bulk import (
     BulkMoveRequest,
     BulkOperationResult,
 )
-from src.schemas.common import ItemResponse, Page, QuotaResponse
+from src.schemas.common import DirectoryListingResponse, ItemResponse, Page, QuotaResponse
 from src.schemas.file import (
     FileMoveRequest,
     FileRenameRequest,
@@ -28,6 +28,7 @@ __all__ = [
     "BulkDeleteRequest",
     "BulkMoveRequest",
     "BulkOperationResult",
+    "DirectoryListingResponse",
     "FileMoveRequest",
     "FileRenameRequest",
     "FileResponse",

@@ -15,9 +15,12 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
+from src.exceptions import FileNotFound
 from src.repositories.file import FileRepository
 from src.repositories.folder import FolderRepository
 from src.services import audit_service
+from src.services.file_service import FileService
+from src.services.folder_service import FolderService
 from src.utils import minio_client
 from src.utils.logging import get_logger
 
@@ -54,6 +57,24 @@ class TrashService:
                 "deleted_at": f.deleted_at,
             })
         return items
+
+    async def restore_item(self, item_id: UUID, user_id: UUID) -> None:
+        if await FileRepository.get_trashed(self.db, item_id, user_id) is not None:
+            await FileService(self.db).restore_file(item_id, user_id)
+            return
+        if await FolderRepository.get_trashed(self.db, item_id, user_id) is not None:
+            await FolderService(self.db).restore_folder(item_id, user_id)
+            return
+        raise FileNotFound("Trash item not found")
+
+    async def permanent_delete_item(self, item_id: UUID, user_id: UUID) -> None:
+        if await FileRepository.get_trashed(self.db, item_id, user_id) is not None:
+            await FileService(self.db).permanent_delete_file(item_id, user_id)
+            return
+        if await FolderRepository.get_trashed(self.db, item_id, user_id) is not None:
+            await FolderService(self.db).permanent_delete_folder(item_id, user_id)
+            return
+        raise FileNotFound("Trash item not found")
 
     async def empty_trash(self, user_id: UUID) -> int:
         """

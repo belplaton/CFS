@@ -145,6 +145,7 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-noreply@cloudstorage.local}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8080}
+      - REDIS_URL=redis://redis:6379/0
       - SERVICE_API_KEY=${SERVICE_API_KEY:-change-this-in-production}
       - AUTH_SERVICE_URL=http://auth:8000
     depends_on:

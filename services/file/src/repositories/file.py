@@ -84,7 +84,7 @@ class FileRepository:
                 File.folder_id == folder_id,
                 File.deleted_at.is_(None),
             )
-            .order_by(File.name)
+            .order_by(File.name, File.id)
             .limit(limit)
             .offset(offset)
         )
@@ -205,7 +205,6 @@ class FileRepository:
             .where(
                 File.deleted_at.isnot(None),
                 File.deleted_at < cutoff,
-                File.deleted_permanently.is_(False),
             )
             .order_by(File.id)
             .limit(limit)

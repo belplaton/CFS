@@ -128,7 +128,7 @@ async def test_list_files(async_client):
     response = await async_client.get("/api/files/")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) >= 2
+    assert len(data["files"]) >= 2
 
 
 @pytest.mark.asyncio
@@ -195,7 +195,7 @@ async def test_delete_file_moves_to_trash(async_client, fake_minio):
 
     # The file should be invisible through normal listings.
     listing = await async_client.get("/api/files/")
-    assert all(item["id"] != file_id for item in listing.json())
+    assert all(item["id"] != file_id for item in listing.json()["files"])
 
     # But it should appear in the trash.
     trash = await async_client.get("/api/trash/")
@@ -452,7 +452,7 @@ async def test_soft_deleted_file_not_in_listing(async_client):
     await async_client.delete(f"/api/files/{file_id}")
 
     listing = await async_client.get("/api/files/")
-    assert all(item["id"] != file_id for item in listing.json())
+    assert all(item["id"] != file_id for item in listing.json()["files"])
 
 
 @pytest.mark.asyncio

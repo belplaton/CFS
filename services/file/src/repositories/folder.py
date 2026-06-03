@@ -31,6 +31,31 @@ class FolderRepository:
         return result.scalar_one_or_none()
 
     @staticmethod
+    async def get_trashed(
+        db: AsyncSession, folder_id: UUID, user_id: UUID
+    ) -> Optional[Folder]:
+        result = await db.execute(
+            select(Folder).where(
+                Folder.id == folder_id,
+                Folder.user_id == user_id,
+                Folder.deleted_at.isnot(None),
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_any_state(
+        db: AsyncSession, folder_id: UUID, user_id: UUID
+    ) -> Optional[Folder]:
+        result = await db.execute(
+            select(Folder).where(
+                Folder.id == folder_id,
+                Folder.user_id == user_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
     async def list_in_folder(
         db: AsyncSession,
         user_id: UUID,
@@ -46,7 +71,7 @@ class FolderRepository:
                 Folder.parent_id == parent_id,
                 Folder.deleted_at.is_(None),
             )
-            .order_by(Folder.name)
+            .order_by(Folder.name, Folder.id)
             .limit(limit)
             .offset(offset)
         )
@@ -112,6 +137,22 @@ class FolderRepository:
         return [row[0] for row in result.all()]
 
     @staticmethod
+    async def list_child_ids_any_state(
+        db: AsyncSession,
+        parent_ids: list[UUID],
+        user_id: UUID,
+    ) -> list[UUID]:
+        if not parent_ids:
+            return []
+        result = await db.execute(
+            select(Folder.id).where(
+                Folder.user_id == user_id,
+                Folder.parent_id.in_(parent_ids),
+            )
+        )
+        return [row[0] for row in result.all()]
+
+    @staticmethod
     async def list_active_files_in_folders(
         db: AsyncSession,
         folder_ids: list[UUID],
@@ -134,6 +175,24 @@ class FolderRepository:
                 File.user_id == user_id,
                 File.folder_id.in_(folder_ids),
                 File.deleted_at.is_(None),
+            )
+        )
+        return result.scalars().all()
+
+    @staticmethod
+    async def list_files_in_folders(
+        db: AsyncSession,
+        folder_ids: list[UUID],
+        user_id: UUID,
+    ) -> Sequence:
+        from src.models.file import File
+
+        if not folder_ids:
+            return []
+        result = await db.execute(
+            select(File).where(
+                File.user_id == user_id,
+                File.folder_id.in_(folder_ids),
             )
         )
         return result.scalars().all()
@@ -175,6 +234,21 @@ class FolderRepository:
             .limit(limit)
         )
         return result.scalars().all()
+
+    @staticmethod
+    async def list_existing_names_in_parent(
+        db: AsyncSession,
+        user_id: UUID,
+        parent_id: Optional[UUID],
+    ) -> set[str]:
+        result = await db.execute(
+            select(Folder.name).where(
+                Folder.user_id == user_id,
+                Folder.parent_id == parent_id,
+                Folder.deleted_at.is_(None),
+            )
+        )
+        return {row[0] for row in result.all()}
 
     @staticmethod
     async def get_parent_id(

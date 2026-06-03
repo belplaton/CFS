@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models import get_db
 from src.schemas import TrashItemResponse
 from src.services.trash_service import TrashService
-from src.services.file_service import FileService
 from src.utils.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/api/trash", tags=["Trash"])
@@ -30,7 +29,7 @@ async def restore_from_trash(
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    await FileService(db).restore_file(item_id, user_id)
+    await TrashService(db).restore_item(item_id, user_id)
     return {"status": "restored"}
 
 
@@ -40,7 +39,7 @@ async def permanent_delete(
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    await FileService(db).permanent_delete_file(item_id, user_id)
+    await TrashService(db).permanent_delete_item(item_id, user_id)
     return {"status": "deleted permanently"}
 
 

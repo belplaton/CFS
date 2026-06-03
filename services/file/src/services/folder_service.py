@@ -12,8 +12,10 @@ from uuid import UUID
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.exceptions import CycleDetected, FolderNotFound
+from src.config import settings
+from src.exceptions import ConflictError, CycleDetected, FolderNotFound
 from src.models.folder import Folder
+from src.repositories.file import FileRepository
 from src.repositories.folder import FolderRepository
 from src.services import audit_service
 from src.utils import minio_client
@@ -162,8 +164,6 @@ class FolderService:
         the TTL cleanup (Phase 4.2) will pick up the orphan on its
         next pass.  The DB row is the source of truth, not the bucket.
         """
-        from src.config import settings
-
         folder = await self.get_folder(folder_id, user_id)
         root_name = folder.name
         root_id = folder.id
@@ -263,7 +263,153 @@ class FolderService:
                 extra={"via_cascade": str(root_id)},
             )
 
+    async def restore_folder(self, folder_id: UUID, user_id: UUID) -> None:
+        folder = await FolderRepository.get_trashed(self.db, folder_id, user_id)
+        if folder is None:
+            raise FolderNotFound("Folder not found in trash")
+
+        subtree = await self._collect_subtree_ids(folder.id, user_id, any_state=True)
+        subtree_set = set(subtree)
+
+        if folder.parent_id is not None:
+            parent = await FolderRepository.get_active(self.db, folder.parent_id, user_id)
+            if parent is None:
+                raise ConflictError(
+                    "Cannot restore folder: original parent is missing or still trashed"
+                )
+
+        folders: list[Folder] = []
+        for fid in subtree:
+            row = await FolderRepository.get_any_state(self.db, fid, user_id)
+            if row is not None:
+                folders.append(row)
+
+        files = list(
+            await FolderRepository.list_files_in_folders(
+                self.db, subtree, user_id
+            )
+        )
+
+        await self._assert_restore_conflicts(user_id, folders, files, subtree_set)
+
+        for row in folders:
+            row.deleted_at = None
+
+        for file in files:
+            ext = minio_client.extract_extension(file.minio_object_id)
+            new_key = minio_client.files_object_key(user_id, ext)
+            minio_client.move(
+                settings.minio_bucket,
+                file.minio_object_id,
+                new_key,
+                file.mime_type or "application/octet-stream",
+            )
+            file.minio_object_id = new_key
+            file.deleted_at = None
+
+        await self.db.flush()
+        await audit_service.record_event(
+            self.db,
+            actor_id=user_id,
+            event="folder.restore",
+            target_id=folder.id,
+            target_kind="folder",
+            extra={
+                "restored_folders": len(folders),
+                "restored_files": len(files),
+            },
+        )
+
+    async def permanent_delete_folder(self, folder_id: UUID, user_id: UUID) -> None:
+        folder = await FolderRepository.get_trashed(self.db, folder_id, user_id)
+        if folder is None:
+            raise FolderNotFound("Folder not found in trash")
+
+        subtree = await self._collect_subtree_ids(folder.id, user_id, any_state=True)
+        files = list(
+            await FolderRepository.list_files_in_folders(
+                self.db, subtree, user_id
+            )
+        )
+
+        for file in files:
+            minio_client.remove(settings.minio_bucket, file.minio_object_id)
+            await self.db.delete(file)
+
+        await self.db.flush()
+        await FolderRepository.delete(self.db, folder)
+        await audit_service.record_event(
+            self.db,
+            actor_id=user_id,
+            event="folder.permanent_delete",
+            target_id=folder_id,
+            target_kind="folder",
+            extra={
+                "deleted_folders": len(subtree),
+                "deleted_files": len(files),
+            },
+        )
+
     # ==================== Helpers ====================
+
+    async def _collect_subtree_ids(
+        self,
+        root_id: UUID,
+        user_id: UUID,
+        *,
+        any_state: bool = False,
+    ) -> list[UUID]:
+        subtree: list[UUID] = [root_id]
+        frontier: list[UUID] = [root_id]
+        hops = 0
+        while frontier:
+            if any_state:
+                children = await FolderRepository.list_child_ids_any_state(
+                    self.db, frontier, user_id
+                )
+            else:
+                children = await FolderRepository.list_child_ids(
+                    self.db, frontier, user_id
+                )
+            if not children:
+                break
+            subtree.extend(children)
+            frontier = children
+            hops += 1
+            if hops > _MAX_ANCESTOR_HOPS:
+                raise CycleDetected("Folder hierarchy is too deep")
+        return subtree
+
+    async def _assert_restore_conflicts(
+        self,
+        user_id: UUID,
+        folders: list[Folder],
+        files: list,
+        subtree_set: set[UUID],
+    ) -> None:
+        for folder in folders:
+            existing_folder_names = await FolderRepository.list_existing_names_in_parent(
+                self.db, user_id, folder.parent_id
+            )
+            if folder.name in existing_folder_names:
+                raise ConflictError(
+                    f"Cannot restore folder '{folder.name}': name conflict in target parent"
+                )
+
+        for file in files:
+            if file.folder_id is not None and file.folder_id not in subtree_set:
+                parent = await FolderRepository.get_active(self.db, file.folder_id, user_id)
+                if parent is None:
+                    raise ConflictError(
+                        f"Cannot restore file '{file.name}': original parent is missing or still trashed"
+                    )
+            existing_file_names = await FileRepository.list_existing_names_in_folder(
+                self.db, user_id, file.folder_id
+            )
+            if file.name in existing_file_names:
+                raise ConflictError(
+                    f"Cannot restore file '{file.name}': name conflict in target folder"
+                )
 
     async def _assert_no_cycle(
         self, moving_id: UUID, target_parent_id: UUID, user_id: UUID

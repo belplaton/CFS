@@ -15,12 +15,12 @@ from src.schemas import (
     BulkDeleteRequest,
     BulkMoveRequest,
     BulkOperationResult,
+    DirectoryListingResponse,
     FileMoveRequest,
     FileRenameRequest,
     FileResponse,
     FileUploadResponse,
     ItemResponse,
-    Page,
     QuotaResponse,
 )
 from src.services.file_service import FileService
@@ -62,28 +62,37 @@ async def _read_upload_with_limit(file: UploadFile, limit: int) -> bytes:
 
 # ==================== Listing ====================
 
-@router.get("/", response_model=Page[ItemResponse])
+@router.get("/", response_model=DirectoryListingResponse)
 async def list_files(
     folder_id: Optional[UUID] = None,
     limit: int = Query(200, ge=1, le=1000),
-    cursor: Optional[str] = Query(
+    folders_cursor: Optional[str] = Query(
         None,
         description=(
-            "Opaque pagination cursor returned in ``next_cursor`` from a "
-            "previous response.  When omitted, the first page is returned."
+            "Opaque pagination cursor returned in ``next_folders_cursor`` "
+            "from a previous response."
+        ),
+    ),
+    files_cursor: Optional[str] = Query(
+        None,
+        description=(
+            "Opaque pagination cursor returned in ``next_files_cursor`` "
+            "from a previous response."
         ),
     ),
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    List folder + file items in a directory (Phase 4.5: cursor-paginated).
+    List folders and files in a directory with independent cursors.
 
-    Folders are returned first (sorted by name), then files (also by
-    name).  ``next_cursor`` is ``null`` when the listing is exhausted.
+    ``limit`` applies per collection. The client paginates folders
+    and files independently using ``next_folders_cursor`` and
+    ``next_files_cursor``.
     """
     try:
-        parsed_cursor = Cursor.try_decode(cursor)
+        parsed_folders_cursor = Cursor.try_decode(folders_cursor)
+        parsed_files_cursor = Cursor.try_decode(files_cursor)
     except CursorError as exc:
         raise HTTPException(
             status_code=400, detail=f"Invalid cursor: {exc}"
@@ -93,31 +102,32 @@ async def list_files(
     folder_svc = FolderService(db)
 
     folders, f_next = await folder_svc.list_folders_page(
-        user_id, folder_id, limit=limit, cursor=parsed_cursor
+        user_id, folder_id, limit=limit, cursor=parsed_folders_cursor
     )
-    files, _files_next = await file_svc.list_files_page(
-        user_id, folder_id, limit=limit, cursor=parsed_cursor
+    files, files_next = await file_svc.list_files_page(
+        user_id, folder_id, limit=limit, cursor=parsed_files_cursor
     )
 
-    items: list[ItemResponse] = []
+    folder_items: list[ItemResponse] = []
     for f in folders:
-        items.append(ItemResponse(
+        folder_items.append(ItemResponse(
             id=f.id, kind="folder", name=f.name,
             parent_id=f.parent_id, created_at=f.created_at, updated_at=f.updated_at,
         ))
+    file_items: list[ItemResponse] = []
     for f in files:
-        items.append(ItemResponse(
+        file_items.append(ItemResponse(
             id=f.id, kind="file", name=f.name, size=f.size,
             mime_type=f.mime_type, parent_id=f.folder_id,
             created_at=f.created_at, updated_at=f.updated_at,
         ))
 
-    # If either side has more, surface a non-null cursor.  In practice
-    # both lists use the same cursor so the second pass uses the *file*
-    # side's continuation; we return the file cursor since the file
-    # list is always the "later" one in the response order.
-    next_cursor = f_next
-    return Page[ItemResponse](items=items, next_cursor=next_cursor)
+    return DirectoryListingResponse(
+        folders=folder_items,
+        files=file_items,
+        next_folders_cursor=f_next,
+        next_files_cursor=files_next,
+    )
 
 
 # ==================== Upload ====================

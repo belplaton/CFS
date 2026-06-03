@@ -21,6 +21,8 @@ from src.utils.request_meta import current_request_meta
 
 logger = get_logger(__name__)
 
+SYSTEM_ACTOR_ID = UUID("00000000-0000-0000-0000-000000000000")
+
 
 async def record_event(
     db: AsyncSession,

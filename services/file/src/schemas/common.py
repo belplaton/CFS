@@ -31,6 +31,15 @@ class QuotaResponse(BaseModel):
     percent: float = 0.0
 
 
+class DirectoryListingResponse(BaseModel):
+    """Directory listing with independent cursors for folders and files."""
+
+    folders: List[ItemResponse]
+    files: List[ItemResponse]
+    next_folders_cursor: Optional[str] = None
+    next_files_cursor: Optional[str] = None
+
+
 T = TypeVar("T")
 
 
