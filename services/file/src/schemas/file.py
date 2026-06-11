@@ -34,6 +34,13 @@ class FileUploadResponse(BaseModel):
     mime_type: str
 
 
+class TextPreviewResponse(BaseModel):
+    """Small text preview body for txt/csv/json-like files."""
+
+    content: str
+    truncated: bool = False
+
+
 class FileMoveRequest(BaseModel):
     """Body of POST /api/files/{file_id}/move."""
 

@@ -162,4 +162,4 @@ def content_disposition_filename(name: str) -> str:
     if not ascii_fallback.strip():
         ascii_fallback = _FALLBACK_NAME
     quoted = urllib.parse.quote(raw_bytes, safe="")
-    return f'filename="{ascii_fallback}"; filename*=UTF-8\'\'{quoted}'
+    return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{quoted}'

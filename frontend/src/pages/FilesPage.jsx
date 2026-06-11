@@ -87,6 +87,7 @@ function FilesPage() {
     isMutating,
     isSearching,
     items,
+    loadFolder,
     moveItems,
     moveItemsToTrash,
     moveToTrash,
@@ -165,6 +166,14 @@ function FilesPage() {
         ),
       )
     : []
+
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      return
+    }
+
+    void loadFolder(currentFolderId || ROOT_FOLDER_ID)
+  }, [currentFolderId, loadFolder, searchQuery])
 
   useEffect(() => {
     if (!deferredSearchQuery.trim()) {

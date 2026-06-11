@@ -1,15 +1,16 @@
-import { useEffect } from 'react'
-import { RotateCcw, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 
 import { useI18n } from '@/components/app/I18nProvider'
 import LanguageSwitcher from '@/components/app/LanguageSwitcher'
 import ThemeSwitcher from '@/components/app/ThemeSwitcher'
+import TrashBrowser from '@/components/files/TrashBrowser'
 import { Button } from '@/components/ui/button'
-import { formatBytes, formatDate, getFileTypeLabel } from '@/lib/utils'
+import { ROOT_FOLDER_ID } from '@/lib/files-constants'
 import { useFileStore } from '@/store/file-store'
 
 function TrashPage() {
-  const { language, t } = useI18n()
+  const { t } = useI18n()
   const {
     deletePermanent,
     emptyTrash,
@@ -19,10 +20,22 @@ function TrashPage() {
     trashError,
     trashItems,
   } = useFileStore((state) => state)
+  const [currentFolderId, setCurrentFolderId] = useState(ROOT_FOLDER_ID)
 
   useEffect(() => {
     void fetchTrash()
   }, [fetchTrash])
+
+  const folderIds = useMemo(
+    () => new Set(trashItems.filter((item) => item.kind === 'folder').map((item) => item.id)),
+    [trashItems],
+  )
+
+  useEffect(() => {
+    if (currentFolderId !== ROOT_FOLDER_ID && !folderIds.has(currentFolderId)) {
+      setCurrentFolderId(ROOT_FOLDER_ID)
+    }
+  }, [currentFolderId, folderIds])
 
   return (
     <div className="space-y-6">
@@ -65,59 +78,28 @@ function TrashPage() {
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="overflow-x-auto">
-          <div className="min-w-[820px]">
-            <div className="grid grid-cols-[minmax(0,1.8fr)_140px_150px_170px] gap-4 border-b bg-muted/40 px-6 py-4 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              <span>{t('trash.columns.name')}</span>
-              <span>{t('trash.columns.type')}</span>
-              <span>{t('trash.columns.deleted')}</span>
-              <span className="text-right">{t('trash.columns.actions')}</span>
-            </div>
-
-            {trashItems.length === 0 ? (
-              <div className="px-6 py-16 text-center">
-                <p className="text-2xl font-semibold">{t('trash.emptyTitle')}</p>
-                <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                  {t('trash.emptyDescription')}
-                </p>
-              </div>
-            ) : null}
-
-            {trashItems.map((item) => (
-              <div
-                className="grid grid-cols-[minmax(0,1.8fr)_140px_150px_170px] gap-4 border-b px-6 py-4 last:border-b-0 hover:bg-muted/20"
-                key={item.id}
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{item.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {item.size ? formatBytes(item.size) : t('common.folder')}
-                  </p>
-                </div>
-                <span className="self-center text-sm text-muted-foreground">{getFileTypeLabel(item, t)}</span>
-                <span className="self-center text-sm text-muted-foreground">{formatDate(item.deletedAt, language)}</span>
-                <div className="flex items-center justify-end gap-2">
-                  <Button onClick={() => void restoreItem(item.id)} size="icon" variant="outline">
-                    <RotateCcw className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      if (window.confirm(t('trash.hardDeleteConfirm', { name: item.name }))) {
-                        void deletePermanent(item.id)
-                      }
-                    }}
-                    size="icon"
-                    variant="ghost"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
+      {trashItems.length === 0 ? (
+        <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+          <div className="px-6 py-16 text-center">
+            <p className="text-2xl font-semibold">{t('trash.emptyTitle')}</p>
+            <p className="mt-3 text-sm leading-7 text-muted-foreground">
+              {t('trash.emptyDescription')}
+            </p>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : (
+        <TrashBrowser
+          currentFolderId={currentFolderId}
+          items={trashItems}
+          onDelete={(item) => {
+            if (window.confirm(t('trash.hardDeleteConfirm', { name: item.name }))) {
+              void deletePermanent(item.id)
+            }
+          }}
+          onGoToFolder={setCurrentFolderId}
+          onRestore={(itemId) => void restoreItem(itemId)}
+        />
+      )}
     </div>
   )
 }

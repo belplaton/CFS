@@ -34,6 +34,8 @@ from src.utils.validators import (
 
 logger = get_logger(__name__)
 
+_TEXT_PREVIEW_MAX_BYTES = 256 * 1024
+
 
 class FileService:
     """Stateless service — ``db`` is the only collaborator it needs."""
@@ -290,13 +292,21 @@ class FileService:
             )
         ext = minio_client.extract_extension(file.minio_object_id)
         new_key = minio_client.files_object_key(user_id, ext)
-        minio_client.move(
-            settings.minio_bucket,
-            file.minio_object_id,
-            new_key,
-            file.mime_type or "application/octet-stream",
-        )
-        file.minio_object_id = new_key
+        try:
+            minio_client.move(
+                settings.minio_bucket,
+                file.minio_object_id,
+                new_key,
+                file.mime_type or "application/octet-stream",
+            )
+            file.minio_object_id = new_key
+        except Exception as exc:  # noqa: BLE001 — fail-open, DB key stays valid
+            logger.warning(
+                "restore.file.minio_move_failed",
+                file_id=str(file_id),
+                user_id=str(user_id),
+                error=str(exc),
+            )
         file.deleted_at = None
         await self.db.flush()
         await audit_service.record_event(
@@ -383,6 +393,19 @@ class FileService:
         return minio_client.get_stream(
             settings.minio_bucket, file.minio_object_id, chunk_size=settings.stream_chunk_size
         ), file
+
+    async def get_text_preview(self, file_id: UUID, user_id: UUID) -> tuple[str, bool]:
+        """Return UTF-8 text preview for small text-like files."""
+        file = await self.get_file(file_id, user_id)
+        payload = minio_client.get_bytes(
+            settings.minio_bucket,
+            file.minio_object_id,
+            max_bytes=_TEXT_PREVIEW_MAX_BYTES + 1,
+        )
+        truncated = len(payload) > _TEXT_PREVIEW_MAX_BYTES
+        if truncated:
+            payload = payload[:_TEXT_PREVIEW_MAX_BYTES]
+        return payload.decode("utf-8", errors="replace"), truncated
 
     # ==================== Helpers ====================
 

@@ -138,32 +138,30 @@ function FileBrowser({
         </div>
       ) : null}
 
-      {breadcrumbs.length > 1 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {breadcrumbs.map((crumb, index) => (
-            <button
-              className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
-                dropTargetId === crumb.id
-                  ? 'border-primary bg-primary/10 text-foreground'
-                  : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-              key={crumb.id}
-              onDragLeave={() => {
-                if (dropTargetId === crumb.id) {
-                  setDropTargetId(null)
-                }
-              }}
-              onDragOver={(event) => handleDragOver(event, crumb.id)}
-              onDrop={(event) => handleDrop(event, crumb.id)}
-              onClick={() => onGoToFolder(crumb.id)}
-              type="button"
-            >
-              {crumb.name}
-              {index < breadcrumbs.length - 1 ? <span className="text-slate-300">/</span> : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        {breadcrumbs.map((crumb, index) => (
+          <button
+            className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+              dropTargetId === crumb.id
+                ? 'border-primary bg-primary/10 text-foreground'
+                : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+            key={crumb.id}
+            onDragLeave={() => {
+              if (dropTargetId === crumb.id) {
+                setDropTargetId(null)
+              }
+            }}
+            onDragOver={(event) => handleDragOver(event, crumb.id)}
+            onDrop={(event) => handleDrop(event, crumb.id)}
+            onClick={() => onGoToFolder(crumb.id)}
+            type="button"
+          >
+            {crumb.name}
+            {index < breadcrumbs.length - 1 ? <span className="text-slate-300">/</span> : null}
+          </button>
+        ))}
+      </div>
 
       {items.length === 0 ? (
         <div className="rounded-xl border border-dashed bg-muted/20 px-6 py-16 text-center">

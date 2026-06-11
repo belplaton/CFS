@@ -19,6 +19,7 @@ from src.schemas import (
     FileMoveRequest,
     FileRenameRequest,
     FileResponse,
+    TextPreviewResponse,
     FileUploadResponse,
     ItemResponse,
     QuotaResponse,
@@ -187,6 +188,16 @@ async def get_file_meta(
     db: AsyncSession = Depends(get_db),
 ):
     return await FileService(db).get_file(file_id, user_id)
+
+
+@router.get("/{file_id}/text-preview", response_model=TextPreviewResponse)
+async def get_text_preview(
+    file_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    content, truncated = await FileService(db).get_text_preview(file_id, user_id)
+    return TextPreviewResponse(content=content, truncated=truncated)
 
 
 # ==================== Download (proxied) ====================

@@ -164,6 +164,19 @@ def get_stream(bucket: str, object_name: str, chunk_size: int):
         response.release_conn()
 
 
+def get_bytes(bucket: str, object_name: str, max_bytes: int | None = None) -> bytes:
+    """Read an object's bytes into memory, optionally capped."""
+    client = get_minio_client()
+    response = client.get_object(bucket, object_name)
+    try:
+        if max_bytes is None:
+            return response.read()
+        return response.read(max_bytes)
+    finally:
+        response.close()
+        response.release_conn()
+
+
 def stat_size(bucket: str, object_name: str) -> int:
     """Return the stored object's size in bytes."""
     client = get_minio_client()

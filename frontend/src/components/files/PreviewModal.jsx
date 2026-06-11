@@ -59,9 +59,9 @@ function PreviewBody({ item, previewBlobUrl, previewError, previewText, previewS
       <div className="rounded-xl border bg-card p-8">
         <FileSpreadsheet className="h-10 w-10 text-foreground" />
         <p className="mt-6 text-2xl font-semibold">{t('preview.documentPlaceholder')}</p>
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-          {t('preview.documentBackendStatus')}
-        </p>
+        <pre className="mt-6 max-h-[420px] overflow-auto whitespace-pre-wrap text-sm leading-6 text-foreground">
+          {previewText || t('preview.documentEmpty')}
+        </pre>
       </div>
     )
   }
@@ -85,16 +85,19 @@ function PreviewModal({ item, onClose, onDownload }) {
   const [previewError, setPreviewError] = useState('')
 
   const shouldFetchBinary = useMemo(
-    () => item && ['image', 'pdf', 'text'].includes(item.preview),
+    () => item && ['image', 'pdf'].includes(item.preview),
+    [item],
+  )
+
+  const shouldFetchGeneratedPreview = useMemo(
+    () => item && ['text', 'document'].includes(item.preview),
     [item],
   )
 
   useEffect(() => {
     if (!item || !shouldFetchBinary) {
       setPreviewBlobUrl(null)
-      setPreviewText('')
       setPreviewState('idle')
-      setPreviewError('')
       return undefined
     }
 
@@ -114,12 +117,60 @@ function PreviewModal({ item, onClose, onDownload }) {
         }
 
         const blob = response.data
-        if (item.preview === 'text') {
-          setPreviewText(await blob.text())
-        } else {
-          objectUrl = window.URL.createObjectURL(blob)
-          setPreviewBlobUrl(objectUrl)
+        objectUrl = window.URL.createObjectURL(blob)
+        setPreviewBlobUrl(objectUrl)
+        setPreviewState('ready')
+      } catch (error) {
+        if (!isActive) {
+          return
         }
+
+        setPreviewState('error')
+        setPreviewError(
+          error.response?.data?.detail
+            || error.message
+            || t('preview.errorFallback'),
+        )
+      }
+    }
+
+    void loadPreview()
+
+    return () => {
+      isActive = false
+      if (objectUrl) {
+        window.URL.revokeObjectURL(objectUrl)
+      }
+    }
+  }, [item, shouldFetchBinary, t])
+
+  useEffect(() => {
+    if (!item || !shouldFetchGeneratedPreview) {
+      setPreviewText('')
+      if (!shouldFetchBinary) {
+        setPreviewError('')
+        setPreviewState('idle')
+      }
+      return undefined
+    }
+
+    let isActive = true
+
+    async function loadGeneratedPreview() {
+      setPreviewState('loading')
+      setPreviewError('')
+
+      try {
+        const response = await client.get(
+          item.preview === 'text'
+            ? `/files/${item.id}/text-preview`
+            : `/preview/${item.id}`,
+        )
+        if (!isActive) {
+          return
+        }
+
+        setPreviewText(response.data?.content || '')
         setPreviewState('ready')
       } catch (error) {
         if (!isActive) {
@@ -134,15 +185,12 @@ function PreviewModal({ item, onClose, onDownload }) {
       }
     }
 
-    void loadPreview()
+    void loadGeneratedPreview()
 
     return () => {
       isActive = false
-      if (objectUrl) {
-        window.URL.revokeObjectURL(objectUrl)
-      }
     }
-  }, [item, shouldFetchBinary])
+  }, [item, shouldFetchBinary, shouldFetchGeneratedPreview, t])
 
   if (!item) {
     return null

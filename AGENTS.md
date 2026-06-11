@@ -40,6 +40,7 @@
 - `2FA` / `backup codes` скрыты из пользовательского MVP surface на `Security` странице до тех пор, пока backend flow не будет реализован end-to-end. Лучше скрывать такие блоки, чем показывать полурабочие CTA.
 - Критичный frontend нюанс: `file-store.bootstrap()` нельзя запускать до гидратации `auth-store` из persist/localStorage. Иначе первые `/api/files/*` уйдут без `Authorization`, дадут ложный `Unable to load files`, а после любой навигации “само починится”.
 - `Preview Service` держит явные `501 Not Implemented` generated-preview маршруты; browser-native preview для image/PDF/text делается через authenticated file download на frontend.
+- `Preview Service` теперь может генерировать текстовые preview для `txt/csv/json/docx/xlsx`, проксируя исходный файл из `file-service` с тем же `Authorization` header. `pdf` и изображения остаются browser-native preview через authenticated download.
 - Docker truth: frontend image сейчас собирается через `npm install` и получает `VITE_API_URL` как build arg; `package-lock.json` всё ещё требует отдельной нормализации перед возвратом к `npm ci`. Smoke сценарий для всего стека прогоняется через `python scripts/gateway_smoke.py`.
 
 ---
@@ -153,3 +154,15 @@ ruff format src tests
 3. Новые конвенции, если вводятся
 4. Что осталось на следующую фазу
 5. Файл `services/file/AGENTS.md` — если меняется API/конфиг
+
+---
+
+## 🧠 Session Notes
+
+- 2026-06-11: `FilesPage` must call `loadFolder(currentFolderId || ROOT_FOLDER_ID)` on mount/current-folder change. Shell bootstrap alone can leave initial `/app/files` view empty until first mutating action refreshes folder contents.
+- 2026-06-11: Plain-text preview (`txt/csv/json` when normalized as `preview === "text"`) is safest directly in frontend via authenticated blob download + `blob.text()`. Do not route plain text through preview-service unless there is a strong reason.
+- 2026-06-11: Trash restore must fail-open if MinIO object move back from `trash/` to `files/` fails. Keep original `minio_object_id`, clear `deleted_at`, log warning. DB key remains valid, so user restore should not 500 just because object-key relocation failed.
+- 2026-06-11: Breadcrumbs in `FileBrowser` should stay visible even at root. Users need a persistent clickable path to return to `My Files`.
+- 2026-06-11: `Trash` should be rendered hierarchically using `original_parent_id` / normalized `parentId`, not as one flat root list. Nested deleted files/folders must be browsable with breadcrumbs similar to normal file browsing.
+- 2026-06-12: `Content-Disposition` for file downloads must include a valid disposition type (`attachment; ...`). Bare `filename=...` is malformed and can surface in browsers as opaque download/preview network failures.
+- 2026-06-12: Plain-text file preview should use dedicated `file-service` JSON endpoint (`/api/files/{id}/text-preview`) rather than download streaming. This avoids browser/XHR transport edge cases on attachment/stream responses.

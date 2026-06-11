@@ -248,7 +248,8 @@
     "pdfSlot": "PDF viewer slot",
     "pdfDescription": "Space for browser PDF preview is ready. After Preview Service is available, page renders or iframe with presigned URL can be connected here.",
     "documentPlaceholder": "Document preview placeholder",
-    "documentDescription": "Component is ready for docx/xlsx preview and thumbnails. Until preview API appears, it shows integration placeholder.",
+    "documentDescription": "Document preview extracts readable text from supported office files.",
+    "documentEmpty": "Document contains no previewable text.",
     "metadataPlaceholder": "Metadata preview",
     "metadataDescription": "For unsupported formats there is a safe metadata fallback. Later add presigned download or specialized viewer.",
     "metadata": "Metadata",
@@ -260,10 +261,10 @@
     "downloadFile": "Download file",
     "loading": "Loading preview...",
     "textEmpty": "Text file loaded, but no preview payload was returned.",
-    "documentBackendStatus": "Generated document previews still depend on the dedicated preview service. Download stays available now.",
+    "documentBackendStatus": "Document preview is generated from supported office file content.",
     "fallbackBackendStatus": "Browser-native preview is available for images, PDFs and text files. Other types fall back to metadata + download.",
     "sourceTitle": "Preview source",
-    "sourceDescription": "Files that browsers can render directly are previewed through authenticated file downloads. Generated thumbnails and document rendering still belong to preview-service work.",
+    "sourceDescription": "Images and PDFs are rendered through authenticated file downloads. Text and supported office formats are rendered through preview-service extraction.",
     "errorFallback": "Preview could not be loaded. Download the file instead."
   },
   "uploadZone": {

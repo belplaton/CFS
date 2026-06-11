@@ -17,6 +17,7 @@ from src.schemas.file import (
     FileMoveRequest,
     FileRenameRequest,
     FileResponse,
+    TextPreviewResponse,
     FileUploadResponse,
 )
 from src.schemas.folder import FolderCreate, FolderResponse, FolderUpdate
@@ -32,6 +33,7 @@ __all__ = [
     "FileMoveRequest",
     "FileRenameRequest",
     "FileResponse",
+    "TextPreviewResponse",
     "FileUploadResponse",
     "FolderCreate",
     "FolderResponse",

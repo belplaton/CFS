@@ -248,7 +248,8 @@
     "pdfSlot": "PDF viewer slot",
     "pdfDescription": "Подготовлено место под браузерный просмотр PDF. После готовности Preview Service сюда подключается поток с рендерами страниц или iframe на presigned URL.",
     "documentPlaceholder": "Document preview placeholder",
-    "documentDescription": "Компонент готов к отображению docx/xlsx preview и thumbnails. До появления preview API показывает описание точки интеграции.",
+    "documentDescription": "Превью документа извлекает читаемый текст из поддерживаемых office-файлов.",
+    "documentEmpty": "В документе нет текста, доступного для предпросмотра.",
     "metadataPlaceholder": "Metadata preview",
     "metadataDescription": "Для нестандартных форматов сейчас доступен безопасный fallback с метаданными. Дальше сюда можно добавить presigned download или специализированный viewer.",
     "metadata": "Метаданные",
@@ -260,10 +261,10 @@
     "downloadFile": "Скачать файл",
     "loading": "Загружаем превью...",
     "textEmpty": "Текстовый файл загружен, но тело превью пустое.",
-    "documentBackendStatus": "Generated preview для документов всё ещё зависит от отдельного preview-service. Скачивание уже доступно.",
+    "documentBackendStatus": "Превью документа генерируется из содержимого поддерживаемых office-файлов.",
     "fallbackBackendStatus": "Браузерное превью доступно для изображений, PDF и текстовых файлов. Остальные форматы пока показывают метаданные и скачивание.",
     "sourceTitle": "Источник превью",
-    "sourceDescription": "Файлы, которые браузер умеет рендерить напрямую, открываются через authenticated download. Generated thumbnails и document rendering остаются задачей preview-service.",
+    "sourceDescription": "Изображения и PDF рендерятся через защищённую загрузку файла. Текст и поддерживаемые office-форматы рендерятся через preview-service.",
     "errorFallback": "Не удалось загрузить превью. Вместо этого скачайте файл."
   },
   "uploadZone": {
