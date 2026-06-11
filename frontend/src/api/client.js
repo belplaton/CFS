@@ -7,11 +7,13 @@ const client = axios.create({
   withCredentials: true, // Important for CORS with credentials
 });
 
+let refreshPromise = null;
+
 // Request interceptor to add Authorization header
 client.interceptors.request.use((config) => {
   const token = useAuthStore.getState().accessToken;
 
-  if (token) {
+  if (token && !config.headers?.Authorization) {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
@@ -22,7 +24,51 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
-    // Handle 401 Unauthorized - maybe trigger refresh token logic here
+    const originalRequest = error.config;
+    const status = error.response?.status;
+    const store = useAuthStore.getState();
+
+    if (
+      status === 401
+      && store.refreshToken
+      && !originalRequest?._retry
+      && !String(originalRequest?.url ?? "").includes("/auth/refresh")
+      && !String(originalRequest?.url ?? "").includes("/auth/login")
+      && !String(originalRequest?.url ?? "").includes("/auth/register")
+      && !String(originalRequest?.url ?? "").includes("/auth/logout")
+    ) {
+      originalRequest._retry = true;
+
+      try {
+        if (!refreshPromise) {
+          refreshPromise = client.post(
+            "/auth/refresh",
+            null,
+            {
+              headers: {
+                Authorization: `Bearer ${store.refreshToken}`,
+              },
+            },
+          ).finally(() => {
+            refreshPromise = null;
+          });
+        }
+
+        const refreshResponse = await refreshPromise;
+        useAuthStore.getState().setTokens({
+          accessToken: refreshResponse.data.access_token,
+          refreshToken: refreshResponse.data.refresh_token,
+        });
+
+        originalRequest.headers = originalRequest.headers ?? {};
+        originalRequest.headers.Authorization = `Bearer ${refreshResponse.data.access_token}`;
+        return client(originalRequest);
+      } catch (refreshError) {
+        useAuthStore.getState().resetAuthState();
+        return Promise.reject(refreshError);
+      }
+    }
+
     return Promise.reject(error);
   },
 );

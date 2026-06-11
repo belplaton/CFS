@@ -14,7 +14,7 @@ import PreviewModal from '@/components/files/PreviewModal'
 import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ROOT_FOLDER_ID } from '@/data/mock-data'
+import { ROOT_FOLDER_ID } from '@/lib/files-constants'
 import { buildFolderSizeCache, getItemEffectiveSize, matchesTypeFilter } from '@/lib/file-metrics'
 import { canMoveItemToParent, getDescendantIds, useFileStore } from '@/store/file-store'
 
@@ -76,18 +76,29 @@ function ModalCard({ children, onClose, title, t }) {
 function FilesPage() {
   const { language, t } = useI18n()
   const {
+    allFolders,
+    clearSearch,
     closePreview,
     createFolder,
     currentFolderId,
-    ensureSeedData,
+    downloadItem,
+    fileError,
+    isLoading,
+    isMutating,
+    isSearching,
     items,
+    moveItems,
+    moveItemsToTrash,
     moveToTrash,
     moveItem,
     openFolder,
     openPreview,
     previewItemId,
     renameItem,
+    searchItems,
     searchQuery,
+    searchResults,
+    searchTotal,
     setSearchQuery,
     setSortBy,
     setView,
@@ -102,22 +113,13 @@ function FilesPage() {
   const [selectedItemIds, setSelectedItemIds] = useState([])
   const [typeFilter, setTypeFilter] = useState('all')
   const deferredSearchQuery = useDeferredValue(searchQuery)
+  const isSearchMode = deferredSearchQuery.trim().length > 0
 
-  useEffect(() => {
-    ensureSeedData()
-  }, [ensureSeedData])
-
-  const foldersById = Object.fromEntries(items.filter((item) => item.kind === 'folder').map((item) => [item.id, item]))
+  const foldersById = Object.fromEntries(allFolders.map((item) => [item.id, item]))
   const currentFolderTitle = getCurrentFolderTitle(currentFolderId, foldersById, t)
-  const normalizedCurrentFolderId = currentFolderId === ROOT_FOLDER_ID ? null : currentFolderId
-  const folderSizeCache = buildFolderSizeCache(items)
-  const visibleItems = items
-    .filter((item) => !item.deletedAt && item.parentId === normalizedCurrentFolderId)
-    .filter((item) =>
-      deferredSearchQuery
-        ? item.name.toLowerCase().includes(deferredSearchQuery.toLowerCase())
-        : true,
-    )
+  const sourceItems = isSearchMode ? searchResults : items
+  const folderSizeCache = buildFolderSizeCache(sourceItems)
+  const visibleItems = sourceItems
     .filter((item) => matchesTypeFilter(item, typeFilter))
     .map((item) => ({
       ...item,
@@ -151,11 +153,11 @@ function FilesPage() {
       return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
     })
 
-  const previewItem = items.find((item) => item.id === previewItemId) ?? null
+  const previewItem = sourceItems.find((item) => item.id === previewItemId) ?? items.find((item) => item.id === previewItemId) ?? null
   const selectedItems = visibleItems.filter((item) => selectedItemIds.includes(item.id))
   const moveOptions = movingItems.length
     ? buildFolderOptions(
-        items,
+        allFolders,
         t,
         language,
         movingItems.flatMap((item) =>
@@ -163,6 +165,15 @@ function FilesPage() {
         ),
       )
     : []
+
+  useEffect(() => {
+    if (!deferredSearchQuery.trim()) {
+      void searchItems('')
+      return
+    }
+
+    void searchItems(deferredSearchQuery)
+  }, [deferredSearchQuery, searchItems])
 
   useEffect(() => {
     const visibleIds = new Set(visibleItems.map((item) => item.id))
@@ -180,6 +191,13 @@ function FilesPage() {
     setSelectedItemIds([])
   }
 
+  const handleOpenFolder = async (folderId) => {
+    if (searchQuery) {
+      clearSearch()
+    }
+    await openFolder(folderId)
+  }
+
   const moveManyToTrash = () => {
     if (!selectedItems.length) {
       return
@@ -193,7 +211,7 @@ function FilesPage() {
       return
     }
 
-    selectedItems.forEach((item) => moveToTrash(item.id))
+    void moveItemsToTrash(selectedItems)
     clearSelection()
   }
 
@@ -204,7 +222,10 @@ function FilesPage() {
         hidden
         id="file-upload-trigger"
         multiple
-        onChange={(event) => uploadFiles(Array.from(event.target.files ?? []), currentFolderId)}
+        onChange={async (event) => {
+          await uploadFiles(Array.from(event.target.files ?? []), currentFolderId)
+          event.target.value = ''
+        }}
         type="file"
       />
 
@@ -276,16 +297,37 @@ function FilesPage() {
           </select>
 
           <div className="flex flex-wrap gap-2">
-            <Button className="h-10 gap-2 px-4" onClick={() => setIsCreateOpen(true)} variant="outline">
+            <Button className="h-10 gap-2 px-4" disabled={isMutating} onClick={() => setIsCreateOpen(true)} variant="outline">
               <FolderPlus className="h-4 w-4" />
               {t('files.createFolderShort')}
             </Button>
-            <Button className="h-10 gap-2 px-4" onClick={() => document.getElementById('file-upload-trigger')?.click()}>
+            <Button className="h-10 gap-2 px-4" disabled={isMutating} onClick={() => document.getElementById('file-upload-trigger')?.click()}>
               <UploadCloud className="h-4 w-4" />
               {t('files.upload')}
             </Button>
           </div>
         </div>
+
+        {fileError ? (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {fileError}
+          </div>
+        ) : null}
+        {isSearchMode ? (
+          <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm text-foreground">
+            {t('files.searchResultsSummary', { query: deferredSearchQuery, count: searchTotal })}
+          </div>
+        ) : null}
+        {isLoading ? (
+          <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            {t('files.loading')}
+          </div>
+        ) : null}
+        {isSearching ? (
+          <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            {t('files.searchLoading')}
+          </div>
+        ) : null}
       </section>
 
       <FileBrowser
@@ -296,20 +338,27 @@ function FilesPage() {
         onDropIntoFolder={(item, targetFolderId) =>
           moveItem({
             id: item.id,
+            kind: item.kind,
             parentId: targetFolderId,
           })}
-        onGoToFolder={(folderId) => openFolder(folderId)}
+        onGoToFolder={(folderId) => handleOpenFolder(folderId)}
         onMove={(item) => setMovingItems([item])}
-        onOpenFolder={(folderId) => openFolder(folderId)}
+        onOpenFolder={(folderId) => handleOpenFolder(folderId)}
         onPreview={(item) => openPreview(item.id)}
         onRename={(item) => setRenamingItem(item)}
         onBulkMove={() => setMovingItems(selectedItems)}
         onBulkTrash={moveManyToTrash}
-        onBulkDownload={() => window.alert(t('files.bulkDownloadSoon'))}
+        onBulkDownload={() => {
+          selectedItems
+            .filter((item) => item.kind === 'file')
+            .forEach((item) => {
+              void downloadItem(item)
+            })
+        }}
         onSelectionChange={setSelectedItemIds}
         onTrash={(item) => {
           if (window.confirm(t('files.confirmTrashSingle', { name: item.name }))) {
-            moveToTrash(item.id)
+            void moveToTrash(item)
           }
         }}
         selectedCount={selectedItems.length}
@@ -321,7 +370,7 @@ function FilesPage() {
         <ModalCard onClose={() => setIsCreateOpen(false)} t={t} title={t('files.createFolderTitle')}>
           <form
             className="space-y-4"
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
               event.preventDefault()
               const formData = new FormData(event.currentTarget)
               const name = formData.get('folderName')?.toString().trim()
@@ -330,15 +379,17 @@ function FilesPage() {
                 return
               }
 
-              createFolder({
+              const success = await createFolder({
                 name,
                 parentId: currentFolderId,
               })
-              setIsCreateOpen(false)
+              if (success) {
+                setIsCreateOpen(false)
+              }
             }}
           >
             <Input autoFocus name="folderName" placeholder={t('files.folderNamePlaceholder')} />
-            <Button className="w-full" type="submit">
+            <Button className="w-full" disabled={isMutating} type="submit">
               {t('common.create')}
             </Button>
           </form>
@@ -353,18 +404,12 @@ function FilesPage() {
         >
           <form
             className="space-y-4"
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
               event.preventDefault()
               const formData = new FormData(event.currentTarget)
               const parentId = formData.get('parentId')?.toString() ?? ROOT_FOLDER_ID
 
-              movingItems.forEach((item) => {
-                moveItem({
-                  id: item.id,
-                  parentId,
-                })
-              })
-
+              await moveItems({ items: movingItems, parentId })
               setMovingItems([])
               clearSelection()
             }}
@@ -395,7 +440,7 @@ function FilesPage() {
               </select>
             </div>
 
-            <Button className="w-full" type="submit">
+            <Button className="w-full" disabled={isMutating} type="submit">
               {t('common.move')}
             </Button>
           </form>
@@ -406,7 +451,7 @@ function FilesPage() {
         <ModalCard onClose={() => setRenamingItem(null)} t={t} title={t('files.renameTitle')}>
           <form
             className="space-y-4"
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
               event.preventDefault()
               const formData = new FormData(event.currentTarget)
               const name = formData.get('itemName')?.toString().trim()
@@ -415,22 +460,23 @@ function FilesPage() {
                 return
               }
 
-              renameItem({
+              await renameItem({
                 id: renamingItem.id,
+                kind: renamingItem.kind,
                 name,
               })
               setRenamingItem(null)
             }}
           >
             <Input autoFocus defaultValue={renamingItem.name} name="itemName" />
-            <Button className="w-full" type="submit">
+            <Button className="w-full" disabled={isMutating} type="submit">
               {t('common.save')}
             </Button>
           </form>
         </ModalCard>
       ) : null}
 
-      <PreviewModal item={previewItem} onClose={closePreview} />
+      <PreviewModal item={previewItem} onClose={closePreview} onDownload={downloadItem} />
     </div>
   )
 }

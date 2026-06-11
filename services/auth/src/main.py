@@ -34,8 +34,9 @@ app = FastAPI(
     title="Cloud Storage Auth Service",
     description="Authentication and user management service for Cloud File Storage",
     version="1.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs/auth",
+    redoc_url="/redoc/auth",
+    openapi_url="/openapi/auth.json",
     lifespan=lifespan,
 )
 

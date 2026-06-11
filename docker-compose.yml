@@ -166,12 +166,15 @@ services:
     environment:
       - ENV=${ENV:-development}
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cloudstorage}:${POSTGRES_PASSWORD:-cloudstorage_secret}@postgres-file:5432/${POSTGRES_DB_FILE:-cloudstorage_file}
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - JWT_ALGORITHM=HS256
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin_secret}
       - MINIO_BUCKET=${MINIO_BUCKET:-cloudstorage}
       - DEFAULT_STORAGE_QUOTA=${DEFAULT_STORAGE_QUOTA:-5368709120}
       - PREMIUM_STORAGE_QUOTA=${PREMIUM_STORAGE_QUOTA:-107374182400}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8080}
       - SERVICE_API_KEY=${SERVICE_API_KEY:-change-this-in-production}
       - AUTH_SERVICE_URL=http://auth:8000
       - REDIS_URL=redis://redis:6379/0
@@ -218,6 +221,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8080/api}
     container_name: cloud-frontend
     restart: unless-stopped
     environment:

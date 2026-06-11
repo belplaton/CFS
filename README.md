@@ -6,18 +6,20 @@
 
 Проект представляет собой облачное хранилище файлов с микросервисной архитектурой.
 
-### Основные возможности (MVP)
+### Текущий статус (июнь 2026)
 - ✅ Регистрация / авторизация (email + пароль)
-- ✅ Вход через Google (OAuth2)
-- ✅ Двухфакторная аутентификация (TOTP)
-- ✅ Верификация email
-- ✅ Восстановление пароля
 - ✅ Загрузка / скачивание / удаление файлов
 - ✅ Управление папками
-- ✅ Предпросмотр файлов
-- ✅ Поиск по имени файла
-- ✅ Корзина (30 дней)
-- ✅ Квоты: 5 ГБ (бесплатно), 100 ГБ (подписка)
+- ✅ Корзина (soft delete, restore, permanent delete)
+- ✅ Квоты и отображение usage в UI
+- ✅ Browser-native preview для image / PDF / text через authenticated download
+- ⚠️ Backend search endpoint есть, но frontend пока использует локальный фильтр по загруженному каталогу
+- ⚠️ Preview Service маршруты существуют, но generated previews ещё не включены
+- ⚠️ Billing UI показывает текущую квоту, но не меняет план на backend
+- ❌ Google OAuth
+- ❌ 2FA (TOTP)
+- ❌ Email verification flow
+- ❌ Reset-password confirmation flow
 
 ## 🏗️ Архитектура
 
@@ -91,14 +93,7 @@ start.bat
 **Вариант для Linux/Mac:**
 
 ```bash
-# Ручная сборка frontend
-docker-compose build frontend
-docker create --name temp-frontend cloudfilestorage-frontend
-docker cp temp-frontend:/frontend/dist/. ./frontend/dist/
-docker rm temp-frontend
-
-# Запуск сервисов
-docker-compose up -d
+docker compose up -d --build
 ```
 
 ### 4. Остановка проекта
@@ -113,6 +108,24 @@ stop.bat
 docker-compose down
 ```
 
+### 4.1 Smoke через gateway
+
+После старта стека:
+
+```bash
+python scripts/gateway_smoke.py
+```
+
+Скрипт ходит только через `http://localhost:8080` и проверяет:
+- health endpoints
+- register/login/me
+- verify email
+- create folder
+- upload/search/download
+- trash/restore/permanent delete
+- forgot-password/reset-password
+- logout + refresh revoke
+
 ### 5. Проверка работы
 
 | Сервис | URL | Описание |
@@ -120,8 +133,14 @@ docker-compose down
 | **Frontend** | http://localhost:8080 | Веб-интерфейс |
 | **Auth Service** | http://localhost:8080/api/auth/ | API аутентификации |
 | **File Service** | http://localhost:8080/api/files/ | API файлов |
+| **Folder API** | http://localhost:8080/api/folders/ | API папок |
+| **Trash API** | http://localhost:8080/api/trash/ | API корзины |
+| **Search API** | http://localhost:8080/api/search/ | API поиска |
 | **Preview Service** | http://localhost:8080/api/preview/ | API превью |
-| **Health Check** | http://localhost:8080/health | Проверка статуса |
+| **Health Check** | http://localhost:8080/health | Deep health file-service |
+| **Auth Health** | http://localhost:8080/health/auth | Проверка Auth Service |
+| **File Health** | http://localhost:8080/health/file | Проверка File Service |
+| **Preview Health** | http://localhost:8080/health/preview | Проверка Preview Service |
 | **Auth DB** | localhost:5433 | PostgreSQL (Auth Service) |
 | **File DB** | localhost:5434 | PostgreSQL (File Service) |
 | **Preview DB** | localhost:5435 | PostgreSQL (Preview Service) |
@@ -130,11 +149,17 @@ docker-compose down
 
 ### 6. API Документация
 
-Каждый сервис предоставляет Swagger UI:
+Каждый сервис предоставляет Swagger UI через gateway:
 
-- Auth Service: http://localhost:8080/api/auth/docs
-- File Service: http://localhost:8080/api/files/docs
-- Preview Service: http://localhost:8080/api/preview/docs
+- Auth Service: http://localhost:8080/docs/auth
+- File Service: http://localhost:8080/docs/file
+- Preview Service: http://localhost:8080/docs/preview
+
+### 6.1 CI и Docker truth
+
+- Frontend Docker build теперь использует `VITE_API_URL` как build-arg, а не только runtime env.
+- Базовый CI лежит в `.github/workflows/ci.yml` и гоняет frontend tests/build плюс backend pytest для `auth` и `file`.
+- Подробный ручной сценарий проверки лежит в `PASS_3_RUNBOOK.txt`.
 
 ## 📁 Структура проекта
 
@@ -253,6 +278,11 @@ SMTP_PASSWORD=
 - Во frontend доступны четыре режима оформления: `light`, `dark`, `midnight` и `system`; все они используют одну компонентную систему и общий UX-рисунок
 - При добавлении новых экранов и компонентов нужно опираться на существующие shadcn patterns, а не изобретать отдельный дизайн-язык
 - Конфигурация стиля фронтенда зафиксирована в `frontend/components.json`
+
+### Frontend Reality Check
+- `Files` и `Trash` страницы ходят в реальные backend endpoints
+- Preview modal рендерит только типы, которые браузер умеет показать напрямую после authenticated download
+- `Security`, `Billing`, `Verify email`, `Reset password` остаются честными статус-экранами там, где backend flow ещё не готов
 
 ### Инфраструктура
 - **Docker** — контейнеризация

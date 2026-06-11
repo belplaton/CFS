@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
 import { Check, Crown, Sparkles } from 'lucide-react'
 
 import { useI18n } from '@/components/app/I18nProvider'
 import LanguageSwitcher from '@/components/app/LanguageSwitcher'
 import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 import { Button } from '@/components/ui/button'
-import { getFileStats } from '@/lib/file-metrics'
 import { formatBytes } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth-store'
 import { useFileStore } from '@/store/file-store'
@@ -41,42 +39,10 @@ const plans = [
 function BillingPage() {
   const { t } = useI18n()
   const user = useAuthStore((state) => state.user)
-  const setStoragePlan = useAuthStore((state) => state.setStoragePlan)
-  const items = useFileStore((state) => state.items)
-  const usedBytes = getFileStats(items).usedBytes
+  const quota = useFileStore((state) => state.quota)
+  const refreshQuota = useFileStore((state) => state.refreshQuota)
+  const usedBytes = quota.used
   const currentPlan = (user?.plan ?? 'Free').toLowerCase()
-  const [confirmPlanId, setConfirmPlanId] = useState(null)
-  const [pendingPlanId, setPendingPlanId] = useState(null)
-  const [status, setStatus] = useState(null)
-  const timerRef = useRef(null)
-
-  const confirmPlan = plans.find((plan) => plan.id === confirmPlanId) ?? null
-
-  const applyPlanChange = (planId) => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-    }
-
-    setPendingPlanId(planId)
-    setStatus(null)
-    timerRef.current = setTimeout(() => {
-      setStoragePlan({ plan: planId })
-      setPendingPlanId(null)
-      setConfirmPlanId(null)
-      setStatus({
-        type: 'success',
-        message: t('billing.successMessage'),
-      })
-    }, 750)
-  }
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-      }
-    }
-  }, [])
 
   return (
     <div className="space-y-5">
@@ -93,23 +59,23 @@ function BillingPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button onClick={() => refreshQuota()} size="sm" variant="outline">
+              {t('billing.refreshQuota')}
+            </Button>
             <LanguageSwitcher compact />
             <ThemeSwitcher compact />
           </div>
         </div>
       </div>
 
-      {status?.type === 'success' ? (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-          {status.message}
-        </div>
-      ) : null}
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-foreground">
+        {t('billing.backendStatus')}
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
         {plans.map((plan) => {
           const isCurrent = currentPlan === plan.id
           const isDowngradeBlocked = usedBytes > plan.quotaBytes
-          const isPending = pendingPlanId === plan.id
           return (
             <article
               className={`rounded-xl border p-5 ${
@@ -148,48 +114,16 @@ function BillingPage() {
               <div className="mt-5">
                 <Button
                   className="w-full"
-                  onClick={() => {
-                    if (isCurrent || isPending || isDowngradeBlocked) {
-                      return
-                    }
-
-                    setConfirmPlanId(plan.id)
-                  }}
                   variant={isCurrent || isDowngradeBlocked ? 'outline' : 'default'}
-                  disabled={isDowngradeBlocked || !!pendingPlanId}
+                  disabled
                 >
-                  {isCurrent ? t('billing.currentPlan') : isPending ? t('billing.applying') : t('billing.choosePlan')}
+                  {isCurrent ? t('billing.currentPlan') : t('billing.choosePlan')}
                 </Button>
               </div>
             </article>
           )
         })}
       </div>
-
-      {confirmPlan ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border bg-background p-5 shadow-2xl">
-            <h3 className="text-xl font-semibold">{t('billing.confirmTitle')}</h3>
-            <p className="mt-3 text-sm text-muted-foreground">
-              {t('billing.confirmText', { from: user?.plan ?? 'Free', to: confirmPlan.title })}
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {t('billing.confirmQuota', { quota: formatBytes(confirmPlan.quotaBytes), used: formatBytes(usedBytes) })}
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <Button onClick={() => setConfirmPlanId(null)} variant="ghost">
-                {t('common.cancel')}
-              </Button>
-              <Button
-                onClick={() => applyPlanChange(confirmPlan.id)}
-                disabled={pendingPlanId === confirmPlan.id}
-              >
-                {pendingPlanId === confirmPlan.id ? t('billing.applying') : t('billing.confirmButton')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }

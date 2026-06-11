@@ -1,31 +1,55 @@
+import { useEffect, useMemo, useState } from 'react'
 import { Download, FileSpreadsheet, FileText, FileType2, X } from 'lucide-react'
 
+import client from '@/api/client'
 import { useI18n } from '@/components/app/I18nProvider'
 import { Button } from '@/components/ui/button'
 import { formatBytes, formatDate, getFileTypeLabel } from '@/lib/utils'
 
-function PreviewArtwork({ item, t }) {
-  if (item.preview === 'image') {
+function PreviewBody({ item, previewBlobUrl, previewError, previewText, previewState, t }) {
+  if (previewState === 'loading') {
     return (
-      <div className="flex min-h-[320px] items-end rounded-xl border bg-muted p-6">
-        <div>
-          <p className="text-sm text-muted-foreground">{t('preview.imagePreview')}</p>
-          <p className="mt-3 text-3xl font-semibold">{item.name}</p>
-        </div>
+      <div className="rounded-xl border bg-card p-8 text-sm text-muted-foreground">
+        {t('preview.loading')}
       </div>
     )
   }
 
-  if (item.preview === 'pdf') {
+  if (previewError) {
+    return (
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-8 text-sm leading-7 text-foreground">
+        {previewError}
+      </div>
+    )
+  }
+
+  if (item.preview === 'image' && previewBlobUrl) {
+    return (
+      <div className="overflow-hidden rounded-xl border bg-card">
+        <img
+          alt={item.name}
+          className="max-h-[520px] w-full object-contain bg-muted/30"
+          src={previewBlobUrl}
+        />
+      </div>
+    )
+  }
+
+  if (item.preview === 'pdf' && previewBlobUrl) {
+    return (
+      <div className="overflow-hidden rounded-xl border bg-card">
+        <iframe className="h-[520px] w-full" src={previewBlobUrl} title={item.name} />
+      </div>
+    )
+  }
+
+  if (item.preview === 'text') {
     return (
       <div className="rounded-xl border bg-card p-6">
-        <div className="rounded-lg border bg-muted p-8">
-          <FileText className="h-10 w-10 text-foreground" />
-          <p className="mt-6 text-2xl font-semibold">{t('preview.pdfSlot')}</p>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-            {t('preview.pdfDescription')}
-          </p>
-        </div>
+        <FileText className="h-10 w-10 text-foreground" />
+        <pre className="mt-6 max-h-[420px] overflow-auto whitespace-pre-wrap text-sm leading-6 text-foreground">
+          {previewText || t('preview.textEmpty')}
+        </pre>
       </div>
     )
   }
@@ -36,7 +60,7 @@ function PreviewArtwork({ item, t }) {
         <FileSpreadsheet className="h-10 w-10 text-foreground" />
         <p className="mt-6 text-2xl font-semibold">{t('preview.documentPlaceholder')}</p>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-          {t('preview.documentDescription')}
+          {t('preview.documentBackendStatus')}
         </p>
       </div>
     )
@@ -47,14 +71,78 @@ function PreviewArtwork({ item, t }) {
       <FileType2 className="h-10 w-10 text-muted-foreground" />
       <p className="mt-6 text-2xl font-semibold">{t('preview.metadataPlaceholder')}</p>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        {t('preview.metadataDescription')}
+        {t('preview.fallbackBackendStatus')}
       </p>
     </div>
   )
 }
 
-function PreviewModal({ item, onClose }) {
+function PreviewModal({ item, onClose, onDownload }) {
   const { language, t } = useI18n()
+  const [previewBlobUrl, setPreviewBlobUrl] = useState(null)
+  const [previewText, setPreviewText] = useState('')
+  const [previewState, setPreviewState] = useState('idle')
+  const [previewError, setPreviewError] = useState('')
+
+  const shouldFetchBinary = useMemo(
+    () => item && ['image', 'pdf', 'text'].includes(item.preview),
+    [item],
+  )
+
+  useEffect(() => {
+    if (!item || !shouldFetchBinary) {
+      setPreviewBlobUrl(null)
+      setPreviewText('')
+      setPreviewState('idle')
+      setPreviewError('')
+      return undefined
+    }
+
+    let isActive = true
+    let objectUrl = null
+
+    async function loadPreview() {
+      setPreviewState('loading')
+      setPreviewError('')
+
+      try {
+        const response = await client.get(`/files/${item.id}/download`, {
+          responseType: 'blob',
+        })
+        if (!isActive) {
+          return
+        }
+
+        const blob = response.data
+        if (item.preview === 'text') {
+          setPreviewText(await blob.text())
+        } else {
+          objectUrl = window.URL.createObjectURL(blob)
+          setPreviewBlobUrl(objectUrl)
+        }
+        setPreviewState('ready')
+      } catch (error) {
+        if (!isActive) {
+          return
+        }
+
+        setPreviewState('error')
+        setPreviewError(
+          error.response?.data?.detail
+            || t('preview.errorFallback'),
+        )
+      }
+    }
+
+    void loadPreview()
+
+    return () => {
+      isActive = false
+      if (objectUrl) {
+        window.URL.revokeObjectURL(objectUrl)
+      }
+    }
+  }, [item, shouldFetchBinary])
 
   if (!item) {
     return null
@@ -74,7 +162,14 @@ function PreviewModal({ item, onClose }) {
         </div>
 
         <div className="grid gap-6 p-6 md:grid-cols-[1.4fr_0.8fr] md:p-8">
-          <PreviewArtwork item={item} t={t} />
+          <PreviewBody
+            item={item}
+            previewBlobUrl={previewBlobUrl}
+            previewError={previewError}
+            previewState={previewState}
+            previewText={previewText}
+            t={t}
+          />
 
           <div className="space-y-4">
             <div className="rounded-xl border bg-card p-6">
@@ -96,13 +191,13 @@ function PreviewModal({ item, onClose }) {
             </div>
 
             <div className="rounded-xl border bg-card p-6">
-              <p className="text-sm text-muted-foreground">{t('preview.backendStep')}</p>
+              <p className="text-sm text-muted-foreground">{t('preview.sourceTitle')}</p>
               <p className="mt-4 text-sm leading-7 text-muted-foreground">
-                {t('preview.backendStepDescription')}
+                {t('preview.sourceDescription')}
               </p>
             </div>
 
-            <Button className="w-full gap-2" variant="outline">
+            <Button className="w-full gap-2" onClick={() => onDownload(item)} variant="outline">
               <Download className="h-4 w-4" />
               {t('preview.downloadFile')}
             </Button>
@@ -114,4 +209,3 @@ function PreviewModal({ item, onClose }) {
 }
 
 export default PreviewModal
-

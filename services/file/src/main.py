@@ -45,8 +45,9 @@ app = FastAPI(
     title="Cloud Storage File Service",
     description="File and folder management service for Cloud File Storage",
     version="1.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs/file",
+    redoc_url="/redoc/file",
+    openapi_url="/openapi/file.json",
     lifespan=lifespan,
 )
 

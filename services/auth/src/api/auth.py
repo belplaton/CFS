@@ -11,11 +11,11 @@ from src.models import get_db
 from src.models.user import User
 from src.schemas import (
     UserCreate, UserLogin, Token, UserResponse,
-    ForgotPasswordRequest, ResetPasswordRequest
+    ForgotPasswordRequest, ResetPasswordRequest, ActionLinkResponse, LogoutRequest,
 )
 from src.services.user_service import UserService
 from src.utils.dependencies import get_current_user, security
-from src.utils.security import decode_token
+from src.utils.security import decode_token, is_refresh_token_revoked, revoke_refresh_token
 from src.utils.rate_limiter import (
     rate_limit_login,
     rate_limit_register,
@@ -135,6 +135,13 @@ async def refresh_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    if await is_refresh_token_revoked(credentials.credentials):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     sub = payload.get("sub")
     if sub is None:
         raise HTTPException(
@@ -168,25 +175,45 @@ async def refresh_token(
     return await user_service.create_tokens_for_user(user)
 
 
+@router.post("/logout")
+async def logout(
+    request: LogoutRequest,
+):
+    """
+    Revoke the provided refresh token.
+    """
+    try:
+        await revoke_refresh_token(request.refresh_token)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    return {"message": "Logged out successfully"}
+
+
 @router.post(
     "/forgot-password",
     dependencies=[Depends(rate_limit_password_reset)],
+    response_model=ActionLinkResponse,
 )
 async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     """
-    Request password reset
-
-    TODO: Implement email sending
+    Request password reset.
     """
     user_service = UserService(db)
-    user = await user_service.get_user_by_email(request.email)
-
-    if user:
-        # TODO: Generate token and send email
-        pass
+    token, action_url = await user_service.request_password_reset(request.email)
 
     # Always return success to prevent email enumeration
-    return {"message": "If email exists, password reset instructions will be sent"}
+    response = ActionLinkResponse(
+        message="If email exists, password reset instructions will be sent",
+    )
+    if token and action_url and request.email:
+        response.token = token
+        response.action_url = action_url
+    return response
 
 
 @router.post(
@@ -195,18 +222,39 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
 )
 async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     """
-    Reset password using token
-
-    TODO: Implement token verification and password update
+    Reset password using token.
     """
-    return {"message": "Password reset endpoint - to be implemented"}
+    user_service = UserService(db)
+    await user_service.reset_password_with_token(request.token, request.new_password)
+    return {"message": "Password updated successfully"}
+
+
+@router.post("/verify-email/request", response_model=ActionLinkResponse)
+async def request_verify_email(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a fresh email verification token for the current user.
+    """
+    user_service = UserService(db)
+    token, action_url = await user_service.request_email_verification(current_user)
+    return ActionLinkResponse(
+        message="Verification instructions generated",
+        token=token,
+        action_url=action_url,
+    )
 
 
 @router.get("/verify-email")
 async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
     """
-    Verify email using token
-
-    TODO: Implement email verification
+    Verify email using token.
     """
-    return {"message": "Email verification endpoint - to be implemented"}
+    user_service = UserService(db)
+    user = await user_service.consume_email_verification_token(token)
+    return {
+        "message": "Email verified successfully",
+        "email": user.email,
+        "verified": True,
+    }

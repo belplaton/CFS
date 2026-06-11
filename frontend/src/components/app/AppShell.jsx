@@ -1,4 +1,5 @@
 import { Cloud, CreditCard, HardDrive, LogOut, ShieldCheck, Trash2 } from 'lucide-react'
+import { useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import { useI18n } from '@/components/app/I18nProvider'
@@ -6,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatBytes } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth-store'
-import { getFileStats } from '@/lib/file-metrics'
 import { useFileStore } from '@/store/file-store'
 
 const navigation = [
@@ -20,13 +20,32 @@ function AppShell() {
   const { t } = useI18n()
   const navigate = useNavigate()
   const logout = useAuthStore((state) => state.logout)
+  const accessToken = useAuthStore((state) => state.accessToken)
+  const hasHydrated = useAuthStore((state) => state.hasHydrated)
+  const refreshProfile = useAuthStore((state) => state.refreshProfile)
   const user = useAuthStore((state) => state.user)
-  const items = useFileStore((state) => state.items)
-  const { fileCount, folderCount, trashCount, usedBytes } = getFileStats(items)
-  const quotaBytes = user?.quotaBytes ?? 5 * 1024 * 1024 * 1024
+  const bootstrap = useFileStore((state) => state.bootstrap)
+  const quota = useFileStore((state) => state.quota)
+  const quotaBytes = quota.total || user?.quotaBytes || 5 * 1024 * 1024 * 1024
   const plan = user?.plan ?? 'Free'
+  const usedBytes = quota.used || user?.usedBytes || 0
   const usagePercent = Math.min(Math.round((usedBytes / Math.max(quotaBytes, 1)) * 100), 100)
   const remainingBytes = Math.max(quotaBytes - usedBytes, 0)
+  const displayName = user?.full_name?.trim() || t('appShell.defaultUserName')
+  const displayEmail = user?.email?.trim() || t('appShell.noEmail')
+
+  useEffect(() => {
+    if (!hasHydrated || !accessToken) {
+      return
+    }
+
+    void (async () => {
+      const profile = await refreshProfile()
+      if (profile) {
+        await bootstrap()
+      }
+    })()
+  }, [accessToken, bootstrap, hasHydrated, refreshProfile])
 
   return (
     <div className="surface-grid min-h-screen bg-background text-foreground">
@@ -64,6 +83,12 @@ function AppShell() {
           </div>
 
           <div className="mt-6 space-y-3 rounded-xl border bg-card p-4">
+            <div className="border-b border-border/70 pb-3">
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t('appShell.account')}</p>
+              <p className="mt-2 truncate text-sm font-semibold text-foreground">{displayName}</p>
+              <p className="truncate text-sm text-muted-foreground">{displayEmail}</p>
+            </div>
+
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t('appShell.storage')}</p>
             <p className="text-lg font-semibold">{t('appShell.planLabel', { plan })}</p>
             <p className="text-sm text-muted-foreground">
@@ -88,26 +113,11 @@ function AppShell() {
             </Button>
           </div>
 
-          <div className="mt-3 space-y-2 rounded-xl border bg-card p-4 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">{t('appShell.foldersCount')}</span>
-              <span className="font-medium">{folderCount}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">{t('appShell.activeFilesCount')}</span>
-              <span className="font-medium">{fileCount}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">{t('appShell.trashCount')}</span>
-              <span className="font-medium">{trashCount}</span>
-            </div>
-          </div>
-
           <div className="mt-auto px-2">
             <Button
               className="w-full justify-center gap-2"
-              onClick={() => {
-                logout()
+              onClick={async () => {
+                await logout()
                 navigate('/login')
               }}
               variant="outline"

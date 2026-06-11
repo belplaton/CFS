@@ -1,7 +1,11 @@
 """
-Preview Service - File Preview Generation
+Preview Service - generated previews are not enabled yet.
+
+Browser-native previews for images/PDF/text are currently handled in
+the frontend via authenticated file downloads. This service keeps its
+routes explicit so API docs reflect reality instead of commented TODOs.
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import settings
@@ -11,8 +15,9 @@ app = FastAPI(
     title="Cloud Storage Preview Service",
     description="File preview generation service for Cloud File Storage",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs/preview",
+    redoc_url="/redoc/preview",
+    openapi_url="/openapi/preview.json",
 )
 
 # CORS middleware - fixed for credentials with specific origin
@@ -34,50 +39,41 @@ async def health_check():
 @app.get("/api/preview/")
 async def root():
     """Root endpoint"""
-    return {"message": "Preview Service is running", "version": "1.0.0"}
+    return {
+        "message": "Preview Service is running",
+        "version": "1.0.0",
+        "generated_previews_enabled": False,
+        "note": "Use direct file download for browser-native preview types.",
+    }
+
+def _generated_preview_not_enabled() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=(
+            "Generated previews are not enabled yet. "
+            "Use /api/files/{id}/download for browser-native preview types."
+        ),
+    )
 
 
-# TODO: Implement preview endpoints
-# @app.get("/api/preview/{file_id}")
-# async def get_preview(file_id: str):
-#     """Get preview for a file"""
-#     pass
-#
-# @app.get("/api/preview/{file_id}/thumbnail")
-# async def get_thumbnail(file_id: str):
-#     """Get thumbnail for a file"""
-#     pass
-#
-# @app.post("/api/preview/{file_id}/generate")
-# async def generate_preview(file_id: str):
-#     """Generate preview for a file"""
-#     pass
-#
-# @app.delete("/api/preview/{file_id}")
-# async def delete_preview(file_id: str):
-#     """Delete preview cache"""
-#     pass
+@app.get("/api/preview/{file_id}")
+async def get_preview(file_id: str):
+    raise _generated_preview_not_enabled()
 
 
-# TODO: Implement image preview
-# @app.get("/api/preview/image/{file_id}")
-# async def preview_image(file_id: str):
-#     """Generate image preview"""
-#     pass
+@app.get("/api/preview/{file_id}/thumbnail")
+async def get_thumbnail(file_id: str):
+    raise _generated_preview_not_enabled()
 
 
-# TODO: Implement PDF preview
-# @app.get("/api/preview/pdf/{file_id}")
-# async def preview_pdf(file_id: str):
-#     """Generate PDF preview"""
-#     pass
+@app.post("/api/preview/{file_id}/generate")
+async def generate_preview(file_id: str):
+    raise _generated_preview_not_enabled()
 
 
-# TODO: Implement document preview
-# @app.get("/api/preview/document/{file_id}")
-# async def preview_document(file_id: str):
-#     """Generate document preview (docx, xlsx)"""
-#     pass
+@app.delete("/api/preview/{file_id}")
+async def delete_preview(file_id: str):
+    raise _generated_preview_not_enabled()
 
 
 if __name__ == "__main__":

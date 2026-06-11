@@ -30,7 +30,7 @@ _DEFAULT_EXCLUDED_PREFIXES: tuple[str, ...] = (
     "/health",
     "/docs",
     "/redoc",
-    "/openapi.json",
+    "/openapi",
 )
 
 

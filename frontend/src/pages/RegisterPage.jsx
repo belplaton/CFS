@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useI18n } from "@/components/app/I18nProvider";
@@ -12,8 +12,14 @@ function RegisterPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const register = useAuthStore((state) => state.register);
+  const requestEmailVerification = useAuthStore((state) => state.requestEmailVerification);
   const isLoading = useAuthStore((state) => state.isLoading);
   const error = useAuthStore((state) => state.error);
+  const clearError = useAuthStore((state) => state.clearError);
+
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -25,7 +31,12 @@ function RegisterPage() {
     const result = await register(email, password, fullName);
 
     if (result.success) {
-      // Since email verification is disabled, user is logged in immediately
+      const verification = await requestEmailVerification();
+      if (verification.success && verification.actionUrl) {
+        window.location.assign(verification.actionUrl);
+        return;
+      }
+
       navigate("/app/files");
     }
   };

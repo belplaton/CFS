@@ -13,8 +13,7 @@ http://:80 {
     }
 
     # ==================== Security headers (Phase 2.8) ====================
-    # Applied to every response.  These are no-ops for non-browser
-    # clients (curl, mobile apps) and harmless for the SPA.
+    # Safe defaults shared by SPA and API responses.
     header {
         # Don't let browsers/old proxies second-guess our Content-Type.
         X-Content-Type-Options "nosniff"
@@ -24,49 +23,90 @@ http://:80 {
         Referrer-Policy "no-referrer"
         # Disable powerful APIs we never use.
         Permissions-Policy "geolocation=(), microphone=(), camera=()"
-        # Conservative CSP for the JSON API: we never inline anything,
-        # and we explicitly do not allow the response to be embedded
-        # anywhere.  The frontend has its own CSP in nginx.conf.
-        Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
-        # Don't cache responses that may contain user data.
-        Cache-Control "no-store"
-        # Cross-origin isolation primitives for browsers.
-        Cross-Origin-Opener-Policy "same-origin"
-        Cross-Origin-Resource-Policy "same-origin"
         # Strip the Server header so we don't leak Caddy version.
         -Server
     }
 
-    # CORS headers for API
-    @api {
-        path /api/*
+    # CORS + browser headers for API responses
+    @api path /api/*
+    header @api {
+        Access-Control-Allow-Origin "http://localhost:8080"
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, X-API-Key"
+        Access-Control-Allow-Credentials "true"
+        Access-Control-Max-Age "86400"
+        # API responses are JSON/plain-text only. Keep them out of caches and embeddings.
+        Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+        Cache-Control "no-store"
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Resource-Policy "same-origin"
     }
-    handle @api {
-        header Access-Control-Allow-Origin "http://localhost:8080"
-        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, PATCH, OPTIONS"
-        header Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, X-API-Key"
-        header Access-Control-Allow-Credentials "true"
-        header Access-Control-Max-Age "86400"
+
+    # Swagger / OpenAPI passthrough
+    handle /docs/auth {
+        reverse_proxy auth:8000
+    }
+    handle /redoc/auth {
+        reverse_proxy auth:8000
+    }
+    handle /openapi/auth.json {
+        reverse_proxy auth:8000
+    }
+
+    handle /docs/file {
+        reverse_proxy file:8000
+    }
+    handle /redoc/file {
+        reverse_proxy file:8000
+    }
+    handle /openapi/file.json {
+        reverse_proxy file:8000
+    }
+
+    handle /docs/preview {
+        reverse_proxy preview:8000
+    }
+    handle /redoc/preview {
+        reverse_proxy preview:8000
+    }
+    handle /openapi/preview.json {
+        reverse_proxy preview:8000
     }
 
     # Auth Service API
-    handle /api/auth/* {
+    @auth_api path /api/auth /api/auth/*
+    handle @auth_api {
         reverse_proxy auth:8000
     }
 
     # File Service API
-    handle /api/files/* {
+    @file_api path /api/files /api/files/* /api/folders /api/folders/* /api/trash /api/trash/* /api/search /api/search/*
+    handle @file_api {
         reverse_proxy file:8000
     }
 
     # Preview Service API
-    handle /api/preview/* {
+    @preview_api path /api/preview /api/preview/*
+    handle @preview_api {
         reverse_proxy preview:8000
     }
 
-    # Health check endpoint
+    # Health endpoints
+    handle /health/auth {
+        rewrite * /health
+        reverse_proxy auth:8000
+    }
+    handle /health/file {
+        rewrite * /health
+        reverse_proxy file:8000
+    }
+    handle /health/preview {
+        rewrite * /health
+        reverse_proxy preview:8000
+    }
     handle /health {
-        respond "OK" 200
+        rewrite * /health
+        reverse_proxy file:8000
     }
 
     # Frontend (React app) - proxy to nginx container

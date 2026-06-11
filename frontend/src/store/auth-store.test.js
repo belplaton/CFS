@@ -8,36 +8,31 @@ describe('auth store', () => {
     useAuthStore.getState().resetAuthState()
   })
 
-  it('requires a second factor when 2FA is enabled for the account', () => {
-    useAuthStore.getState().login({ email: 'demo@cloudstorage.dev' })
-    useAuthStore.getState().toggleTwoFactor()
-    useAuthStore.getState().logout()
+  it('clears session state on logout', async () => {
+    useAuthStore.setState({
+      isAuthenticated: true,
+      accessToken: 'token',
+      refreshToken: 'refresh',
+      user: { email: 'user@example.com' },
+    })
 
-    useAuthStore.getState().login({ email: 'demo@cloudstorage.dev' })
+    await useAuthStore.getState().logout()
 
-    const stateAfterLogin = useAuthStore.getState()
-    expect(stateAfterLogin.isAuthenticated).toBe(false)
-    expect(stateAfterLogin.pendingTwoFactor?.email).toBe('demo@cloudstorage.dev')
-
-    const result = useAuthStore.getState().verifyTwoFactor({ code: '246810' })
-
-    expect(result).toEqual({ success: true, method: 'totp' })
-    expect(useAuthStore.getState().isAuthenticated).toBe(true)
-    expect(useAuthStore.getState().user?.twoFactorEnabled).toBe(true)
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(useAuthStore.getState().accessToken).toBeNull()
+    expect(useAuthStore.getState().user).toBeNull()
   })
 
-  it('accepts a backup code once and then removes it', () => {
-    useAuthStore.getState().login({ email: 'demo@cloudstorage.dev' })
-    useAuthStore.getState().toggleTwoFactor()
+  it('resets state to initial values', () => {
+    useAuthStore.setState({
+      isAuthenticated: true,
+      error: 'bad',
+      user: { email: 'user@example.com' },
+    })
 
-    const firstBackupCode = useAuthStore.getState().user?.backupCodes[0]
+    useAuthStore.getState().resetAuthState()
 
-    useAuthStore.getState().logout()
-    useAuthStore.getState().login({ email: 'demo@cloudstorage.dev' })
-
-    const result = useAuthStore.getState().verifyTwoFactor({ code: firstBackupCode })
-
-    expect(result).toEqual({ success: true, method: 'backup-code' })
-    expect(useAuthStore.getState().user?.backupCodes).not.toContain(firstBackupCode)
+    expect(useAuthStore.getState().error).toBeNull()
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
   })
 })

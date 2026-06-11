@@ -14,6 +14,7 @@ Phase 3 changes:
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -21,6 +22,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from src.config import settings
+from src.utils.redis_client import get_redis
 
 
 # Password hashing context
@@ -40,6 +42,13 @@ def get_password_hash(password: str) -> str:
 
 
 # ==================== JWT Utilities ====================
+
+REVOCATION_KEY_PREFIX = "auth:revoked:refresh:"
+
+
+def _refresh_revocation_key(token: str) -> str:
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return f"{REVOCATION_KEY_PREFIX}{token_hash}"
 
 
 def _base_claims(token_type: str) -> Dict[str, Any]:
@@ -108,6 +117,25 @@ def is_refresh_token(payload: Dict[str, Any]) -> bool:
     return payload.get("type") == "refresh"
 
 
+async def revoke_refresh_token(token: str) -> None:
+    """Blacklist a refresh token until its natural expiry."""
+    payload = decode_token(token)
+    if payload.get("type") != "refresh":
+        raise JWTError("Wrong token type for refresh revocation")
+
+    expires_at = payload.get("exp")
+    if expires_at is None:
+        raise JWTError("Missing exp claim")
+
+    ttl_seconds = max(int(expires_at - datetime.now(timezone.utc).timestamp()), 1)
+    await get_redis().setex(_refresh_revocation_key(token), ttl_seconds, "1")
+
+
+async def is_refresh_token_revoked(token: str) -> bool:
+    """Return ``True`` when the given refresh token was revoked."""
+    return bool(await get_redis().get(_refresh_revocation_key(token)))
+
+
 # Re-export so ``dependencies.py`` keeps its existing import path.
 __all__ = [
     "JWTError",
@@ -117,5 +145,7 @@ __all__ = [
     "get_password_hash",
     "is_access_token",
     "is_refresh_token",
+    "is_refresh_token_revoked",
+    "revoke_refresh_token",
     "verify_password",
 ]

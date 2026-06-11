@@ -2,6 +2,7 @@
   "common": {
     "email": "Email",
     "password": "Пароль",
+    "loading": "Загружаем...",
     "close": "Закрыть",
     "save": "Сохранить",
     "cancel": "Отмена",
@@ -52,6 +53,9 @@
     "brandTitle": "Cloud File Storage",
     "brandEyebrow": "Drive",
     "navigation": "Навигация",
+    "account": "Аккаунт",
+    "defaultUserName": "Владелец аккаунта",
+    "noEmail": "Email недоступен",
     "nav": {
       "files": "Файлы",
       "trash": "Корзина",
@@ -89,7 +93,7 @@
     "openSecurityFlow": "Посмотреть security flow",
     "scopeTitle": "Current scope",
     "scopeItem1": "Файловый менеджер, навигация по папкам, поиск, сортировка, корзина и квоты.",
-    "scopeItem2": "Auth screens, verify/reset flow и подготовленный раздел security/2FA.",
+    "scopeItem2": "Auth-экраны, подтверждение email, сброс пароля и безопасность аккаунта.",
     "scopeItem3": "Preview modal и integration-ready слой под File/Preview API.",
     "pillars": {
       "workflowTitle": "File workflow",
@@ -103,7 +107,7 @@
   "login": {
     "eyebrow": "Login",
     "title": "Вход в рабочее пространство",
-    "description": "Текущий backend auth ещё не реализован полностью, поэтому экран уже построен как production-like форма, но работает через локальный store до подключения API.",
+    "description": "Вход уже использует реальный auth API по email и паролю.",
     "noAccount": "Нет аккаунта?",
     "create": "Создать",
     "cardTitleSignIn": "Sign in",
@@ -117,7 +121,9 @@
     "forgotPassword": "Забыли пароль?",
     "signIn": "Войти",
     "continueGoogle": "Продолжить через Google",
-    "demoHint": "Демо-режим: если для аккаунта включена 2FA, после логина откроется отдельный шаг подтверждения. Дальше сюда подключается POST /api/auth/login и TOTP challenge flow."
+    "verifiedNotice": "Email подтверждён. Теперь можно войти.",
+    "passwordResetNotice": "Пароль обновлён. Войдите с новым паролем.",
+    "backendStatus": "Дополнительные способы входа появятся позже."
   },
   "register": {
     "eyebrow": "Register",
@@ -127,14 +133,14 @@
     "signIn": "Войти",
     "cardTitle": "Create account",
     "name": "Имя",
-    "namePlaceholder": "Platon Belyakov",
+    "namePlaceholder": "Alex Ivanov",
     "passwordPlaceholder": "Минимум 8 символов",
     "submit": "Зарегистрироваться"
   },
   "forgotPassword": {
     "eyebrow": "Password Reset",
     "title": "Запрос на сброс пароля",
-    "description": "Страница подготовлена под request-reset endpoint и уже вписана в auth-flow приложения.",
+    "description": "Запросите ссылку на сброс пароля через реальный auth API.",
     "remembered": "Вспомнили пароль?",
     "backToLogin": "Назад ко входу",
     "cardTitle": "Reset access",
@@ -143,27 +149,34 @@
   "resetPassword": {
     "eyebrow": "New Password",
     "title": "Установка нового пароля",
-    "description": "Новый пароль пока не уходит в backend, но отдельная форма и маршрут уже собраны под полный reset-password flow.",
+    "description": "Завершите сброс пароля по токену, который выдал auth API.",
     "backQuestion": "Вернуться ко входу?",
     "openLogin": "Открыть login",
     "cardTitle": "Reset password",
-    "demoEmailInfo": "В демо-режиме письмо имитируется переходом на эту страницу для {email}.",
+    "demoEmailInfo": "Сброс пароля для {email}. Используйте защищённую ссылку из письма, чтобы завершить изменение.",
     "newPassword": "Новый пароль",
     "newPasswordPlaceholder": "Минимум 8 символов",
     "repeatPassword": "Повторите пароль",
     "repeatPasswordPlaceholder": "Повторите новый пароль",
-    "saveAndBack": "Сохранить и вернуться ко входу"
+    "saveAndBack": "Сохранить и вернуться ко входу",
+    "backendStatus": "Для этой страницы нужен валидный токен из письма для сброса пароля.",
+    "passwordMismatch": "Пароли должны совпадать, прежде чем запрос будет отправлен.",
+    "success": "Пароль успешно обновлён. Войдите с новым паролем."
   },
   "verifyEmail": {
     "eyebrow": "Email Verification",
     "title": "Подтверждение email",
-    "description": "Страница верификации уже выделена в отдельный маршрут и готова под verify-email endpoint, повторную отправку письма и состояние успешной активации.",
+    "description": "Подтвердите email по verification token, который выдаёт auth API.",
     "alreadyVerified": "Уже подтвердили почту?",
     "goToLogin": "Перейти ко входу",
     "cardTitle": "Verify account",
-    "sentTo": "Проверочное письмо направлено на {email}. В демо-режиме подтверждение имитируется кнопкой ниже.",
+    "sentTo": "Подтвердите email для {email}.",
     "confirm": "Подтвердить email",
-    "resend": "Отправить письмо повторно"
+    "resend": "Отправить письмо повторно",
+    "missingToken": "Откройте эту страницу из письма с подтверждением, чтобы завершить проверку email.",
+    "verifying": "Подтверждаем email...",
+    "success": "Email успешно подтверждён.",
+    "loginNotice": "Email подтверждён. Теперь можно войти."
   },
   "notFound": {
     "title": "Страница не найдена",
@@ -182,7 +195,10 @@
       "sizeDesc": "По размеру",
       "sizeAsc": "По размеру (малые)"
     },
-    "searchPlaceholder": "Поиск по текущей папке",
+    "searchPlaceholder": "Поиск по всем файлам и папкам",
+    "searchResultsSummary": "Глобальный поиск по \"{query}\" вернул {count} результат(ов). Открой папку из результатов, чтобы выйти из режима поиска.",
+    "loading": "Загружаем файлы...",
+    "searchLoading": "Ищем по хранилищу...",
     "typeFilter": {
       "all": "Все типы",
       "folders": "Папки",
@@ -241,7 +257,14 @@
     "updated": "Обновлён",
     "backendStep": "Следующий backend шаг",
     "backendStepDescription": "Подключить GET /api/preview/:id и GET /api/files/:id/download, чтобы modal перестал быть демо-слоем и стал полноценным viewer.",
-    "downloadFile": "Скачать файл"
+    "downloadFile": "Скачать файл",
+    "loading": "Загружаем превью...",
+    "textEmpty": "Текстовый файл загружен, но тело превью пустое.",
+    "documentBackendStatus": "Generated preview для документов всё ещё зависит от отдельного preview-service. Скачивание уже доступно.",
+    "fallbackBackendStatus": "Браузерное превью доступно для изображений, PDF и текстовых файлов. Остальные форматы пока показывают метаданные и скачивание.",
+    "sourceTitle": "Источник превью",
+    "sourceDescription": "Файлы, которые браузер умеет рендерить напрямую, открываются через authenticated download. Generated thumbnails и document rendering остаются задачей preview-service.",
+    "errorFallback": "Не удалось загрузить превью. Вместо этого скачайте файл."
   },
   "uploadZone": {
     "title": "Загрузка и структура данных",
@@ -252,7 +275,7 @@
   "trash": {
     "eyebrow": "Trash",
     "title": "Корзина",
-    "description": "Отдельная страница корзины закрывает спринт 5 по roadmap. Восстановление и безвозвратное удаление уже отрисованы на уровне интерфейса и store.",
+    "description": "Удалённые элементы остаются здесь, пока вы не восстановите их или не удалите навсегда.",
     "emptyTrash": "Очистить корзину",
     "emptyTrashConfirm": "Очистить корзину полностью?",
     "columns": {
@@ -262,49 +285,33 @@
       "actions": "Действия"
     },
     "emptyTitle": "Корзина пуста",
-    "emptyDescription": "Когда появятся soft-delete endpoint-ы backend, эта страница будет получать данные из API.",
+    "emptyDescription": "Удалённые файлы и папки появляются здесь, пока их не восстановят или не удалят окончательно.",
     "hardDeleteConfirm": "Удалить \"{name}\" безвозвратно?"
   },
   "security": {
     "eyebrow": "Security",
     "title": "Безопасность аккаунта",
-    "description": "Центр управления методами входа, восстановления и 2FA. Все экраны готовы для интеграции backend endpoints.",
+    "description": "Управляйте статусом email и восстановлением пароля в одном месте.",
+    "signedInAs": "Вы вошли как",
+    "defaultUserName": "Владелец аккаунта",
+    "noEmail": "Email недоступен",
     "emailVerified": "Email подтверждён",
     "emailNotVerified": "Email ещё не подтверждён",
-    "twoFactorTitle": "Two-factor access",
-    "twoFactorDescription": "После включения вход требует отдельный TOTP challenge step.",
-    "status": "Статус",
-    "enabled": "Включена",
-    "disabled": "Выключена",
-    "demoCode": "Демо-код",
-    "disable2fa": "Отключить 2FA",
-    "enable2fa": "Включить 2FA",
     "emailTitle": "Email verification",
     "emailDescription": "Проверка email и повторная отправка ссылки подтверждения.",
     "openVerify": "Открыть verify",
-    "resendFlow": "Resend flow",
+    "resendFlow": "Отправить ещё раз",
     "passwordTitle": "Password recovery",
     "passwordDescription": "Запрос письма для reset и экран ввода нового пароля.",
     "requestReset": "Запросить reset",
     "newPassword": "Новый пароль",
-    "backupTitle": "Backup codes",
-    "backupDescription": "Коды скрыты по умолчанию. Для показа требуется повторный ввод пароля.",
-    "backupUnavailable": "Backup codes доступны после включения 2FA.",
-    "showBackupCodes": "Показать backup codes",
-    "identityTitle": "Подтверждение личности",
-    "identityDescription": "Для показа backup codes повторно введите пароль от аккаунта.",
-    "identityPlaceholder": "Повторно введите пароль",
-    "identityError": "Введите пароль (минимум 6 символов).",
-    "confirm": "Подтвердить",
-    "backupModalTitle": "Backup codes",
-    "backupModalDescription": "Сохраните коды в безопасном месте. Каждый код можно использовать только один раз.",
-    "backupMissing": "Backup codes отсутствуют. Выключите и снова включите 2FA для генерации.",
-    "hideBackupCodes": "Скрыть backup codes"
+    "verifyRequested": "Процесс подтверждения email запущен.",
+    "verifyFailed": "Сейчас не удалось создать verification-ссылку."
   },
   "billing": {
     "eyebrow": "Storage plans",
     "title": "Тарифы хранилища",
-    "description": "Экран пока работает в mock-режиме фронтенда. Подключим оплату после готовности billing API.",
+    "description": "Экран читает текущую квоту из backend. Смена тарифов останется выключенной, пока не появятся billing mutations.",
     "usedNow": "Текущее использование: {used}",
     "successMessage": "План успешно обновлен. Новая квота уже применена в workspace.",
     "badges": {
@@ -332,6 +339,8 @@
     "confirmTitle": "Подтверждение смены плана",
     "confirmText": "Сменить план с {from} на {to}?",
     "confirmQuota": "Новая квота: {quota}. Используется сейчас: {used}.",
-    "confirmButton": "Подтвердить"
+    "confirmButton": "Подтвердить",
+    "backendStatus": "Изменение тарифов пока не подключено к backend. Эта страница отражает текущую квоту, но не меняет план.",
+    "refreshQuota": "Обновить квоту"
   }
 }

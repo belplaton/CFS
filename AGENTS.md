@@ -17,8 +17,30 @@
 - `README.md` — быстрый старт
 - `ARCHITECTURE.md` (v2.0) — C3/C4 диаграммы, схемы БД
 - `ROADMAP.md` — спринты, milestones
+- `BACKLOG_PASS_1.txt` / `BACKLOG_PASS_2.txt` / `BACKLOG_PASS_3.txt` — текущий интеграционный backlog до честного MVP без mock/demo поведения
+- `PASS_1_CONTRACT_MATRIX.txt` — матрица `экран -> store action -> endpoint -> status` для прохода по полной frontend/backend связке
+- `PASS_3_RUNBOOK.txt` — Docker/gateway smoke runbook
+- `scripts/gateway_smoke.py` — автоматизированный happy-path smoke через `localhost:8080`
 - `docker-compose.yml` — оркестрация
 - `.env.example` — все переменные окружения
+
+**Gateway / Frontend конвенция:**
+- Строгий `Content-Security-Policy: default-src 'none'` и `Cache-Control: no-store` применять только к `/api/*`, не глобально ко всему `:8080`. Для SPA CSP задаётся в `frontend/nginx.conf`, иначе React bundle режется браузером и получается белый экран.
+- Gateway обязан проксировать не только `/api/files/*`, но и `/api/folders/*`, `/api/trash/*`, `/api/search/*`; иначе frontend silently упирается во frontend fallback вместо backend.
+- Swagger UI через gateway публикуется вне `/api/*` (`/docs/auth`, `/docs/file`, `/docs/preview`), иначе API-only CSP ломает browser docs.
+
+**Frontend / Product reality:**
+- `Files` и `Trash` страницы подключены к реальному backend. Mock items больше не источник истины для основного file-manager.
+- Runtime mock dataset `frontend/src/data/mock-data.js` удалён; `ROOT_FOLDER_ID` вынесен в нейтральный helper, чтобы demo-модуль не оставался скрытой production-зависимостью.
+- Поиск на `Files` странице ходит в реальный `GET /api/search/?q=...` и больше не притворяется локальной фильтрацией текущей папки.
+- `Verify email`, `Forgot password`, `Reset password`, `Logout` теперь должны идти через реальные auth endpoints. В development backend возвращает `action_url`/`token` для verify/reset flows, чтобы весь цикл был проходим без SMTP-заглушек.
+- В shell/sidebar и на `Security` странице должен отображаться текущий email пользователя из `/api/auth/me`; отсутствие email в UI считать регрессией.
+- Auth UX: после успешного verify email и reset password пользователь должен возвращаться на login с явным success notice, а не оставаться на промежуточном техничном экране.
+- `Security` и `Billing` остаются status/read-only поверхностями только там, где backend mutation ещё не существует (`TOTP`, billing plan change).
+- `2FA` / `backup codes` скрыты из пользовательского MVP surface на `Security` странице до тех пор, пока backend flow не будет реализован end-to-end. Лучше скрывать такие блоки, чем показывать полурабочие CTA.
+- Критичный frontend нюанс: `file-store.bootstrap()` нельзя запускать до гидратации `auth-store` из persist/localStorage. Иначе первые `/api/files/*` уйдут без `Authorization`, дадут ложный `Unable to load files`, а после любой навигации “само починится”.
+- `Preview Service` держит явные `501 Not Implemented` generated-preview маршруты; browser-native preview для image/PDF/text делается через authenticated file download на frontend.
+- Docker truth: frontend image сейчас собирается через `npm install` и получает `VITE_API_URL` как build arg; `package-lock.json` всё ещё требует отдельной нормализации перед возвратом к `npm ci`. Smoke сценарий для всего стека прогоняется через `python scripts/gateway_smoke.py`.
 
 ---
 
@@ -119,7 +141,7 @@ ruff format src tests
 - **PostgreSQL:** testcontainers `postgres:15-alpine` (если Docker доступен; иначе skip)
 - **MinIO:** in-memory `FakeMinioStorage` (monkeypatch `src.utils.minio_client`)
 - **Auth:** `app.dependency_overrides[get_current_user_id]`
-- **Test users:** `USER_ALICE` и `USER_BOB` в `tests/helpers.py`
+- **Test users:** два фиксированных тестовых пользователя в `tests/helpers.py`
 - **Тестов:** 34 в `tests/test_file_service.py` (auth, IDOR, upload, cycle, soft-delete, quota race)
 
 ---

@@ -1,4 +1,4 @@
-import { ROOT_FOLDER_ID } from '@/data/mock-data'
+import { ROOT_FOLDER_ID } from '@/lib/files-constants'
 
 function getParentKey(parentId) {
   return parentId ?? ROOT_FOLDER_ID

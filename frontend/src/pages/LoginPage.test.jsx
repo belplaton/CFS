@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import I18nProvider from '@/components/app/I18nProvider'
 import ThemeProvider from '@/components/app/ThemeProvider'
 import { setLanguage } from '@/i18n/manager'
 import LoginPage from '@/pages/LoginPage'
@@ -12,31 +13,23 @@ describe('LoginPage', () => {
     window.localStorage.clear()
     setLanguage('en')
     useAuthStore.getState().resetAuthState()
-    useAuthStore.getState().login({ email: 'demo@cloudstorage.dev' })
-    useAuthStore.getState().toggleTwoFactor()
-    useAuthStore.getState().logout()
-    useAuthStore.getState().login({ email: 'demo@cloudstorage.dev' })
   })
 
-  it('renders the two-factor step and completes login after a valid code', async () => {
+  it('renders the standard login form', () => {
     render(
       <ThemeProvider>
-        <MemoryRouter initialEntries={['/login']}>
-          <Routes>
-            <Route element={<LoginPage />} path="/login" />
-            <Route element={<div>files page</div>} path="/app/files" />
-          </Routes>
-        </MemoryRouter>
+        <I18nProvider>
+          <MemoryRouter initialEntries={['/login']}>
+            <Routes>
+              <Route element={<LoginPage />} path="/login" />
+            </Routes>
+          </MemoryRouter>
+        </I18nProvider>
       </ThemeProvider>,
     )
 
-    expect(screen.getByText(/Two-factor protection is enabled/i)).toBeInTheDocument()
-
-    fireEvent.change(screen.getByLabelText(/Verification code/i), {
-      target: { value: '246810' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /Confirm sign in/i }))
-
-    expect(await screen.findByText('files page')).toBeInTheDocument()
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
   })
 })

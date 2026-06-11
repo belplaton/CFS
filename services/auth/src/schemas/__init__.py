@@ -104,11 +104,25 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 
+class ActionLinkResponse(BaseModel):
+    """Generic response for token delivery flows."""
+
+    message: str
+    action_url: Optional[str] = None
+    token: Optional[str] = None
+
+
 class ResetPasswordRequest(BaseModel):
     """Reset password request."""
 
     token: str
     new_password: str = Field(..., min_length=8, max_length=100)
+
+
+class LogoutRequest(BaseModel):
+    """Logout request."""
+
+    refresh_token: str
 
 
 # ==================== Google OAuth Schemas ====================

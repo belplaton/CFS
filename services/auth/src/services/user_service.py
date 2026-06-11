@@ -7,13 +7,17 @@ password hashing, token issuance, last-login bookkeeping).
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import secrets
 from uuid import UUID
 
 from fastapi import HTTPException, status
 
+from src.config import settings
+from src.models.token import VerificationToken
 from src.models.user import User
 from src.repositories.user import UserRepository
+from src.repositories.verification_token import VerificationTokenRepository
 from src.schemas import UserCreate
 from src.utils.security import (
     create_access_token,
@@ -25,6 +29,9 @@ from src.utils.security import (
 
 class UserService:
     """Service for user operations."""
+
+    EMAIL_VERIFICATION_TOKEN_TYPE = "email_verification"
+    PASSWORD_RESET_TOKEN_TYPE = "password_reset"
 
     def __init__(self, db) -> None:
         self.db = db
@@ -58,9 +65,7 @@ class UserService:
             password_hash=get_password_hash(user_data.password),
             full_name=user_data.full_name,
             is_active=True,
-            # Email verification is disabled for now — flip to False once
-            # the verification flow is wired up.
-            is_verified=True,
+            is_verified=False,
         )
         await UserRepository.add(self.db, user)
         return user
@@ -103,3 +108,112 @@ class UserService:
     async def verify_user_email(self, user: User) -> None:
         user.is_verified = True
         await self.db.flush()
+
+    async def create_verification_token(
+        self,
+        user: User,
+        *,
+        token_type: str,
+        expires_in_hours: int,
+    ) -> VerificationToken:
+        await VerificationTokenRepository.invalidate_for_user(
+            self.db,
+            user.id,
+            token_type=token_type,
+        )
+
+        token = VerificationToken(
+            user_id=user.id,
+            token=secrets.token_urlsafe(32),
+            token_type=token_type,
+            expires_at=datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=expires_in_hours),
+        )
+        await VerificationTokenRepository.add(self.db, token)
+        return token
+
+    def build_action_url(self, path: str, *, token: str, email: str) -> str:
+        return f"{settings.frontend_url}{path}?token={token}&email={email}"
+
+    async def request_email_verification(self, user: User) -> tuple[str, str]:
+        token = await self.create_verification_token(
+            user,
+            token_type=self.EMAIL_VERIFICATION_TOKEN_TYPE,
+            expires_in_hours=24,
+        )
+        action_url = self.build_action_url(
+            "/verify-email",
+            token=token.token,
+            email=user.email,
+        )
+        return token.token, action_url
+
+    async def consume_email_verification_token(self, token_value: str) -> User:
+        token = await VerificationTokenRepository.get_active_by_token(
+            self.db,
+            token_value,
+            token_type=self.EMAIL_VERIFICATION_TOKEN_TYPE,
+            now=datetime.now(timezone.utc),
+        )
+        if token is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification token",
+            )
+
+        user = await self.get_user_by_id(token.user_id)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        await self.verify_user_email(user)
+        await VerificationTokenRepository.mark_used(self.db, token)
+        return user
+
+    async def request_password_reset(self, email: str) -> tuple[str | None, str | None]:
+        user = await self.get_user_by_email(email.lower().strip())
+        if user is None:
+            return None, None
+
+        token = await self.create_verification_token(
+            user,
+            token_type=self.PASSWORD_RESET_TOKEN_TYPE,
+            expires_in_hours=1,
+        )
+        action_url = self.build_action_url(
+            "/reset-password",
+            token=token.token,
+            email=user.email,
+        )
+        return token.token, action_url
+
+    async def reset_password_with_token(self, token_value: str, new_password: str) -> User:
+        token = await VerificationTokenRepository.get_active_by_token(
+            self.db,
+            token_value,
+            token_type=self.PASSWORD_RESET_TOKEN_TYPE,
+            now=datetime.now(timezone.utc),
+        )
+        if token is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token",
+            )
+
+        user = await self.get_user_by_id(token.user_id)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        user.password_hash = get_password_hash(new_password)
+        await VerificationTokenRepository.mark_used(self.db, token)
+        await VerificationTokenRepository.invalidate_for_user(
+            self.db,
+            user.id,
+            token_type=self.PASSWORD_RESET_TOKEN_TYPE,
+        )
+        await self.db.flush()
+        return user

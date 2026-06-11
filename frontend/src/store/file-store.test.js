@@ -1,41 +1,32 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { ROOT_FOLDER_ID } from '@/data/mock-data'
-import { useFileStore } from '@/store/file-store'
+import { ROOT_FOLDER_ID } from '@/lib/files-constants'
+import { canMoveItemToParent, getDescendantIds, useFileStore } from '@/store/file-store'
 
-describe('file store', () => {
+describe('file store helpers', () => {
   beforeEach(() => {
     window.localStorage.clear()
     useFileStore.getState().resetData()
+    useFileStore.setState({
+      allFolders: [
+        { id: 'folder-root-a', kind: 'folder', parentId: null, name: 'A' },
+        { id: 'folder-child-a', kind: 'folder', parentId: 'folder-root-a', name: 'B' },
+      ],
+      items: [
+        { id: 'file-1', kind: 'file', parentId: null, name: 'Doc.pdf', size: 10 },
+      ],
+    })
   })
 
-  it('moves a file into a different folder', () => {
-    useFileStore.getState().moveItem({
-      id: 'file-home-brief',
-      parentId: 'folder-project-alpha',
-    })
-
-    const movedFile = useFileStore.getState().items.find((item) => item.id === 'file-home-brief')
-    expect(movedFile?.parentId).toBe('folder-project-alpha')
+  it('returns descendants for a folder', () => {
+    expect(getDescendantIds('folder-root-a')).toEqual(['folder-child-a'])
   })
 
-  it('prevents moving a folder into one of its descendants', () => {
-    useFileStore.getState().moveItem({
-      id: 'folder-project-alpha',
-      parentId: 'folder-legal',
-    })
-
-    const folder = useFileStore.getState().items.find((item) => item.id === 'folder-project-alpha')
-    expect(folder?.parentId).toBeNull()
+  it('prevents moving a folder into its descendant', () => {
+    expect(canMoveItemToParent('folder-root-a', 'folder-child-a')).toBe(false)
   })
 
-  it('allows moving an item back to root through the root folder id', () => {
-    useFileStore.getState().moveItem({
-      id: 'file-contract',
-      parentId: ROOT_FOLDER_ID,
-    })
-
-    const movedFile = useFileStore.getState().items.find((item) => item.id === 'file-contract')
-    expect(movedFile?.parentId).toBeNull()
+  it('allows moving a file back to root', () => {
+    expect(canMoveItemToParent('file-1', ROOT_FOLDER_ID)).toBe(true)
   })
 })

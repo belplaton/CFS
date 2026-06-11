@@ -90,7 +90,7 @@ async def test_get_me_success(async_client):
     assert response.status_code == 200
     data = response.json()
     assert data["email"] == "me_test@example.com"
-    assert data["is_verified"] is True
+    assert data["is_verified"] is False
 
 
 @pytest.mark.asyncio
@@ -145,6 +145,101 @@ async def test_refresh_with_invalid_token_returns_401(async_client):
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Could not validate credentials"
+
+
+@pytest.mark.asyncio
+async def test_verify_email_request_and_consume(async_client):
+    registered = await async_client.post(
+        "/api/auth/register",
+        json={
+            "email": "verify_test@example.com",
+            "password": "password123",
+        },
+    )
+    tokens = registered.json()
+
+    request_response = await async_client.post(
+        "/api/auth/verify-email/request",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+
+    assert request_response.status_code == 200
+    request_data = request_response.json()
+    assert request_data["token"]
+    assert request_data["action_url"]
+
+    verify_response = await async_client.get(
+        "/api/auth/verify-email",
+        params={"token": request_data["token"]},
+    )
+
+    assert verify_response.status_code == 200
+    verify_data = verify_response.json()
+    assert verify_data["verified"] is True
+    assert verify_data["email"] == "verify_test@example.com"
+
+
+@pytest.mark.asyncio
+async def test_forgot_password_and_reset_password(async_client):
+    registered = await async_client.post(
+        "/api/auth/register",
+        json={
+            "email": "reset_test@example.com",
+            "password": "password123",
+        },
+    )
+    assert registered.status_code == 201
+
+    forgot_response = await async_client.post(
+        "/api/auth/forgot-password",
+        json={"email": "reset_test@example.com"},
+    )
+    assert forgot_response.status_code == 200
+    forgot_data = forgot_response.json()
+    assert forgot_data["token"]
+    assert forgot_data["action_url"]
+
+    reset_response = await async_client.post(
+        "/api/auth/reset-password",
+        json={
+            "token": forgot_data["token"],
+            "new_password": "new-password123",
+        },
+    )
+    assert reset_response.status_code == 200
+
+    login_response = await async_client.post(
+        "/api/auth/login",
+        json={
+            "email": "reset_test@example.com",
+            "password": "new-password123",
+        },
+    )
+    assert login_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes_refresh_token(async_client):
+    registered = await async_client.post(
+        "/api/auth/register",
+        json={
+            "email": "logout_test@example.com",
+            "password": "password123",
+        },
+    )
+    tokens = registered.json()
+
+    logout_response = await async_client.post(
+        "/api/auth/logout",
+        json={"refresh_token": tokens["refresh_token"]},
+    )
+    assert logout_response.status_code == 200
+
+    refresh_response = await async_client.post(
+        "/api/auth/refresh",
+        headers={"Authorization": f"Bearer {tokens['refresh_token']}"},
+    )
+    assert refresh_response.status_code == 401
 
 
 @pytest.mark.asyncio

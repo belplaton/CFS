@@ -9,6 +9,7 @@ application code branch-free.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -27,31 +28,57 @@ _initialised: bool = False
 class _NullRedis:
     """No-op Redis stub used when REDIS_URL is unset."""
 
+    def __init__(self) -> None:
+        self._values: dict[str, tuple[str, datetime | None]] = {}
+
+    def _cleanup(self, key: str) -> None:
+        value = self._values.get(key)
+        if value is None:
+            return
+        _, expires_at = value
+        if expires_at is not None and expires_at <= datetime.now(timezone.utc):
+            self._values.pop(key, None)
+
     async def incr(self, *_args, **_kwargs):
         return 0
 
-    async def expire(self, *_args, **_kwargs):
-        return True
-
-    async def ttl(self, *_args, **_kwargs):
-        return -1
-
     async def get(self, *_args, **_kwargs):
-        return None
+        key = _args[0] if _args else None
+        if key is None:
+            return None
+        self._cleanup(key)
+        value = self._values.get(key)
+        return value[0] if value else None
 
     async def set(self, *_args, **_kwargs):
+        if len(_args) >= 2:
+            self._values[_args[0]] = (str(_args[1]), None)
         return True
 
     async def setex(self, *_args, **_kwargs):
+        if len(_args) >= 3:
+            key = _args[0]
+            seconds = int(_args[1])
+            value = str(_args[2])
+            self._values[key] = (
+                value,
+                datetime.now(timezone.utc) + timedelta(seconds=seconds),
+            )
         return True
 
     async def delete(self, *_args, **_kwargs):
-        return 0
+        deleted = 0
+        for key in _args:
+            if key in self._values:
+                self._values.pop(key, None)
+                deleted += 1
+        return deleted
 
     async def ping(self):
-        return False
+        return 0
 
     async def close(self):
+        self._values.clear()
         return None
 
     async def sadd(self, *_args, **_kwargs):
@@ -64,7 +91,37 @@ class _NullRedis:
         return False
 
     async def exists(self, *_args, **_kwargs):
-        return 0
+        count = 0
+        for key in _args:
+            self._cleanup(key)
+            if key in self._values:
+                count += 1
+        return count
+
+    async def ttl(self, *_args, **_kwargs):
+        key = _args[0] if _args else None
+        if key is None:
+            return -1
+        self._cleanup(key)
+        value = self._values.get(key)
+        if value is None or value[1] is None:
+            return -1
+        delta = value[1] - datetime.now(timezone.utc)
+        return max(int(delta.total_seconds()), -1)
+
+    async def expire(self, *_args, **_kwargs):
+        if len(_args) < 2:
+            return False
+        key = _args[0]
+        seconds = int(_args[1])
+        value = await self.get(key)
+        if value is None:
+            return False
+        self._values[key] = (
+            value,
+            datetime.now(timezone.utc) + timedelta(seconds=seconds),
+        )
+        return True
 
 
 _null = _NullRedis()

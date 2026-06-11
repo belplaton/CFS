@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { RotateCcw, Trash2 } from 'lucide-react'
 
 import { useI18n } from '@/components/app/I18nProvider'
@@ -9,8 +10,19 @@ import { useFileStore } from '@/store/file-store'
 
 function TrashPage() {
   const { language, t } = useI18n()
-  const { deletePermanent, emptyTrash, items, restoreItem } = useFileStore((state) => state)
-  const trashItems = items.filter((item) => item.deletedAt)
+  const {
+    deletePermanent,
+    emptyTrash,
+    fetchTrash,
+    isTrashLoading,
+    restoreItem,
+    trashError,
+    trashItems,
+  } = useFileStore((state) => state)
+
+  useEffect(() => {
+    void fetchTrash()
+  }, [fetchTrash])
 
   return (
     <div className="space-y-6">
@@ -26,9 +38,9 @@ function TrashPage() {
           <div className="flex shrink-0 items-center gap-2">
             <Button
               className="gap-2"
-              onClick={() => {
+              onClick={async () => {
                 if (window.confirm(t('trash.emptyTrashConfirm'))) {
-                  emptyTrash()
+                  await emptyTrash()
                 }
               }}
               variant="outline"
@@ -41,6 +53,17 @@ function TrashPage() {
           </div>
         </div>
       </section>
+
+      {trashError ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {trashError}
+        </div>
+      ) : null}
+      {isTrashLoading ? (
+        <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          Loading trash...
+        </div>
+      ) : null}
 
       <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="overflow-x-auto">
@@ -75,13 +98,13 @@ function TrashPage() {
                 <span className="self-center text-sm text-muted-foreground">{getFileTypeLabel(item, t)}</span>
                 <span className="self-center text-sm text-muted-foreground">{formatDate(item.deletedAt, language)}</span>
                 <div className="flex items-center justify-end gap-2">
-                  <Button onClick={() => restoreItem(item.id)} size="icon" variant="outline">
+                  <Button onClick={() => void restoreItem(item.id)} size="icon" variant="outline">
                     <RotateCcw className="h-4 w-4" />
                   </Button>
                   <Button
                     onClick={() => {
                       if (window.confirm(t('trash.hardDeleteConfirm', { name: item.name }))) {
-                        deletePermanent(item.id)
+                        void deletePermanent(item.id)
                       }
                     }}
                     size="icon"
