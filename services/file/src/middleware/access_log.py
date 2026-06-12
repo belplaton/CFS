@@ -16,6 +16,7 @@ re-raise from here — the middleware is observational only.
 Health probes and OpenAPI documentation are excluded by default
 to keep the log signal-to-noise ratio high.
 """
+
 from __future__ import annotations
 
 import time
@@ -91,9 +92,7 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         finally:
             duration_ms = round((time.perf_counter() - start) * 1000, 2)
             event = (
-                "http.request_slow"
-                if duration_ms >= self._slow_ms
-                else "http.request"
+                "http.request_slow" if duration_ms >= self._slow_ms else "http.request"
             )
             # Read the values from ``request.state`` rather than the
             # contextvars: by the time this finally runs the inner

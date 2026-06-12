@@ -5,6 +5,7 @@ A single append-only table that records security-relevant events
 (upload, soft delete, restore, move, rename, ...).  Reads from this
 table should always be scoped to the actor's own id.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -28,9 +29,13 @@ class AuditLog(Base):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    actor_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    actor_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False, index=True
+    )
     event: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    target_id: Mapped[Optional[UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    target_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
     target_kind: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)

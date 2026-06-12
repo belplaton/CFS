@@ -7,6 +7,7 @@ add it here and have the service call the repository.  This keeps the
 business logic readable and makes it trivial to swap the storage
 backend (Postgres → something else) without touching service code.
 """
+
 from __future__ import annotations
 
 from typing import Optional, Sequence
@@ -120,9 +121,7 @@ class FileRepository:
         return result.scalars().all()
 
     @staticmethod
-    async def list_trashed(
-        db: AsyncSession, user_id: UUID
-    ) -> Sequence[File]:
+    async def list_trashed(db: AsyncSession, user_id: UUID) -> Sequence[File]:
         """List soft-deleted files for ``user_id`` (newest first)."""
         result = await db.execute(
             select(File)

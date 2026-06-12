@@ -16,6 +16,7 @@ Cross-service contract note
 The cross-service id namespace is the UUID issued by Auth.  Any new
 service joining the platform should accept UUID subs and refuse ints.
 """
+
 from __future__ import annotations
 
 from typing import Optional

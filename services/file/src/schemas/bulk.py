@@ -5,6 +5,7 @@ The endpoints accept up to ``MAX_BULK_ITEMS`` ids per request — beyond
 that the client must chunk.  This keeps the outer transaction bounded
 and prevents a single request from monopolising the worker.
 """
+
 from __future__ import annotations
 
 from typing import List, Optional

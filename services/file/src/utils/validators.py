@@ -15,6 +15,7 @@ Design notes
   added in a later phase so that we can detect mismatches between declared
   and actual content type.
 """
+
 from __future__ import annotations
 
 import os
@@ -35,7 +36,10 @@ _PATH_SEPARATORS = {"/", "\\"}
 
 # Reserved device names on Windows (case-insensitive, with or without extension).
 _WINDOWS_RESERVED = {
-    "CON", "PRN", "AUX", "NUL",
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
     *(f"COM{i}" for i in range(1, 10)),
     *(f"LPT{i}" for i in range(1, 10)),
 }
@@ -162,4 +166,4 @@ def content_disposition_filename(name: str) -> str:
     if not ascii_fallback.strip():
         ascii_fallback = _FALLBACK_NAME
     quoted = urllib.parse.quote(raw_bytes, safe="")
-    return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{quoted}'
+    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quoted}"

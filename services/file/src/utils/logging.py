@@ -7,6 +7,7 @@ human-friendly key/value stream in development.  A ``request_id`` is
 propagated through the request via a ``ContextVar`` (see the middleware
 in :mod:`src.middleware.request_id`).
 """
+
 from __future__ import annotations
 
 import logging
@@ -88,7 +89,9 @@ def configure_logging(*, env: str, level: str = "INFO") -> None:
 
     # Quiet down chatty third parties a touch in development.
     for noisy in ("uvicorn.access", "sqlalchemy.engine"):
-        logging.getLogger(noisy).setLevel(logging.WARNING if is_production else logging.INFO)
+        logging.getLogger(noisy).setLevel(
+            logging.WARNING if is_production else logging.INFO
+        )
 
 
 def get_logger(name: str | None = None) -> BoundLogger:

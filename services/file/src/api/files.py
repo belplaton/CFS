@@ -1,6 +1,7 @@
 """
 File API endpoints (Phase 1: streaming upload + proxied download).
 """
+
 from typing import Optional
 from uuid import UUID
 
@@ -28,7 +29,12 @@ from src.services.file_service import FileService
 from src.services.folder_service import FolderService
 from src.utils.cursor import Cursor, CursorError
 from src.utils.dependencies import get_current_user_id
-from src.utils.rate_limiter import POLICY_DELETE, POLICY_UPLOAD, rate_limit
+from src.utils.rate_limiter import (
+    POLICY_DEFAULT,
+    POLICY_DELETE,
+    POLICY_UPLOAD,
+    rate_limit,
+)
 from src.utils.validators import content_disposition_filename
 
 
@@ -36,6 +42,7 @@ router = APIRouter(prefix="/api/files", tags=["Files"])
 
 
 # ==================== Helpers ====================
+
 
 async def _read_upload_with_limit(file: UploadFile, limit: int) -> bytes:
     """
@@ -63,7 +70,12 @@ async def _read_upload_with_limit(file: UploadFile, limit: int) -> bytes:
 
 # ==================== Listing ====================
 
-@router.get("/", response_model=DirectoryListingResponse)
+
+@router.get(
+    "/",
+    response_model=DirectoryListingResponse,
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def list_files(
     folder_id: Optional[UUID] = None,
     limit: int = Query(200, ge=1, le=1000),
@@ -95,9 +107,7 @@ async def list_files(
         parsed_folders_cursor = Cursor.try_decode(folders_cursor)
         parsed_files_cursor = Cursor.try_decode(files_cursor)
     except CursorError as exc:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid cursor: {exc}"
-        ) from exc
+        raise HTTPException(status_code=400, detail=f"Invalid cursor: {exc}") from exc
 
     file_svc = FileService(db)
     folder_svc = FolderService(db)
@@ -111,17 +121,30 @@ async def list_files(
 
     folder_items: list[ItemResponse] = []
     for f in folders:
-        folder_items.append(ItemResponse(
-            id=f.id, kind="folder", name=f.name,
-            parent_id=f.parent_id, created_at=f.created_at, updated_at=f.updated_at,
-        ))
+        folder_items.append(
+            ItemResponse(
+                id=f.id,
+                kind="folder",
+                name=f.name,
+                parent_id=f.parent_id,
+                created_at=f.created_at,
+                updated_at=f.updated_at,
+            )
+        )
     file_items: list[ItemResponse] = []
     for f in files:
-        file_items.append(ItemResponse(
-            id=f.id, kind="file", name=f.name, size=f.size,
-            mime_type=f.mime_type, parent_id=f.folder_id,
-            created_at=f.created_at, updated_at=f.updated_at,
-        ))
+        file_items.append(
+            ItemResponse(
+                id=f.id,
+                kind="file",
+                name=f.name,
+                size=f.size,
+                mime_type=f.mime_type,
+                parent_id=f.folder_id,
+                created_at=f.created_at,
+                updated_at=f.updated_at,
+            )
+        )
 
     return DirectoryListingResponse(
         folders=folder_items,
@@ -132,6 +155,7 @@ async def list_files(
 
 
 # ==================== Upload ====================
+
 
 @router.post(
     "/upload",
@@ -171,7 +195,12 @@ async def upload_file(
 
 # ==================== Single file ====================
 
-@router.get("/quota", response_model=QuotaResponse)
+
+@router.get(
+    "/quota",
+    response_model=QuotaResponse,
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def get_quota(
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
@@ -181,7 +210,11 @@ async def get_quota(
     return QuotaResponse(used=used, total=total, percent=percent)
 
 
-@router.get("/{file_id}", response_model=FileResponse)
+@router.get(
+    "/{file_id}",
+    response_model=FileResponse,
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def get_file_meta(
     file_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
@@ -190,7 +223,11 @@ async def get_file_meta(
     return await FileService(db).get_file(file_id, user_id)
 
 
-@router.get("/{file_id}/text-preview", response_model=TextPreviewResponse)
+@router.get(
+    "/{file_id}/text-preview",
+    response_model=TextPreviewResponse,
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def get_text_preview(
     file_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
@@ -202,7 +239,11 @@ async def get_text_preview(
 
 # ==================== Download (proxied) ====================
 
-@router.get("/{file_id}/download")
+
+@router.get(
+    "/{file_id}/download",
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def download_file(
     file_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
@@ -223,6 +264,7 @@ async def download_file(
 
 
 # ==================== Bulk operations (Phase 4.6) ====================
+
 
 @router.post(
     "/bulk-delete",
@@ -247,6 +289,7 @@ async def bulk_delete_files(
 @router.post(
     "/bulk-move",
     response_model=BulkOperationResult,
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
 )
 async def bulk_move_files(
     payload: BulkMoveRequest,
@@ -267,6 +310,7 @@ async def bulk_move_files(
 
 # ==================== Mutations ====================
 
+
 @router.delete(
     "/{file_id}",
     dependencies=[Depends(rate_limit(POLICY_DELETE))],
@@ -280,7 +324,10 @@ async def delete_file(
     return {"status": "moved to trash"}
 
 
-@router.post("/{file_id}/restore")
+@router.post(
+    "/{file_id}/restore",
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def restore_file(
     file_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
@@ -303,7 +350,10 @@ async def permanent_delete_file(
     return {"status": "deleted permanently"}
 
 
-@router.post("/{file_id}/move")
+@router.post(
+    "/{file_id}/move",
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def move_file(
     file_id: UUID,
     body: FileMoveRequest,
@@ -314,7 +364,10 @@ async def move_file(
     return {"status": "moved"}
 
 
-@router.patch("/{file_id}/rename")
+@router.patch(
+    "/{file_id}/rename",
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def rename_file(
     file_id: UUID,
     body: FileRenameRequest,

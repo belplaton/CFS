@@ -5,6 +5,7 @@ The ``Base`` is a ``DeclarativeBase`` subclass and every model uses
 ``Mapped[...]`` annotations + ``mapped_column(...)``. Phase 2 introduces
 Alembic and removes ``create_all`` from production.
 """
+
 from __future__ import annotations
 
 import asyncio

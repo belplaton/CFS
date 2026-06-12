@@ -14,6 +14,7 @@ Cursor format
     JSON envelope makes it trivial to add fields (e.g. ``ts`` for
     time-ordered feeds) without breaking older clients.
 """
+
 from __future__ import annotations
 
 import base64

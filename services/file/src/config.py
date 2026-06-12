@@ -1,6 +1,7 @@
 """
 Configuration settings for File Service
 """
+
 from datetime import timedelta
 from functools import lru_cache
 from typing import FrozenSet
@@ -31,8 +32,8 @@ class Settings(BaseSettings):
     minio_prefix_trash: str = "trash"
 
     # ==================== Storage quotas (bytes) ====================
-    default_storage_quota: int = 5 * 1024 * 1024 * 1024          # 5 GB
-    premium_storage_quota: int = 100 * 1024 * 1024 * 1024        # 100 GB
+    default_storage_quota: int = 5 * 1024 * 1024 * 1024  # 5 GB
+    premium_storage_quota: int = 100 * 1024 * 1024 * 1024  # 100 GB
 
     # ==================== Trash TTL (Phase 4.2) ====================
     # How long a soft-deleted file lives in trash before the cleanup
@@ -48,9 +49,9 @@ class Settings(BaseSettings):
 
     # ==================== Upload limits (Phase 1: security) ====================
     # Hard cap for a single uploaded object.
-    max_upload_size: int = 100 * 1024 * 1024                     # 100 MB (per ROADMAP)
+    max_upload_size: int = 100 * 1024 * 1024  # 100 MB (per ROADMAP)
     # Streaming buffer size when reading UploadFile.
-    stream_chunk_size: int = 1024 * 1024                         # 1 MB
+    stream_chunk_size: int = 1024 * 1024  # 1 MB
     # Filename length cap (matches DB column).
     max_filename_length: int = 255
 
@@ -85,7 +86,7 @@ class Settings(BaseSettings):
 
     # ==================== Presigned URLs (Phase 1: tightened) ====================
     # Short-lived URLs for direct MinIO access. Used only by internal flows.
-    presigned_url_expires_seconds: int = 15 * 60                 # 15 minutes
+    presigned_url_expires_seconds: int = 15 * 60  # 15 minutes
     presigned_url_expires: timedelta = Field(
         default_factory=lambda: timedelta(seconds=15 * 60)
     )
@@ -106,7 +107,10 @@ class Settings(BaseSettings):
     # Refuse to start in production with placeholder secrets.
     insecure_secret_markers: FrozenSet[str] = Field(
         default_factory=lambda: frozenset(
-            {"change-this-in-production", "your-super-secret-jwt-key-change-in-production"}
+            {
+                "change-this-in-production",
+                "your-super-secret-jwt-key-change-in-production",
+            }
         )
     )
 
@@ -132,7 +136,9 @@ class Settings(BaseSettings):
     @property
     def allowed_ext_set(self) -> FrozenSet[str]:
         return frozenset(
-            e.strip().lower().lstrip(".") for e in self.allowed_extensions.split(",") if e.strip()
+            e.strip().lower().lstrip(".")
+            for e in self.allowed_extensions.split(",")
+            if e.strip()
         )
 
     def assert_safe_for_production(self) -> None:

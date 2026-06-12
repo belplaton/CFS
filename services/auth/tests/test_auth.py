@@ -42,8 +42,9 @@ async def test_register_duplicate_email(async_client):
         },
     )
 
-    assert response.status_code == 400
-    assert "already registered" in response.json()["detail"].lower()
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error"]["code"] == "user_already_exists"
 
 
 @pytest.mark.asyncio
@@ -133,7 +134,7 @@ async def test_refresh_with_access_token_returns_401(async_client):
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Could not validate credentials"
+    assert response.json()["error"]["code"] == "authentication_error"
 
 
 @pytest.mark.asyncio
@@ -144,7 +145,7 @@ async def test_refresh_with_invalid_token_returns_401(async_client):
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Could not validate credentials"
+    assert response.json()["error"]["code"] == "authentication_error"
 
 
 @pytest.mark.asyncio

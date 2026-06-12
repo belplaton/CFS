@@ -6,6 +6,7 @@ The middleware in :mod:`src.middleware.request_meta` populates these
 values per request.  The audit service reads them when writing rows so
 the service methods themselves can stay HTTP-agnostic.
 """
+
 from __future__ import annotations
 
 from contextvars import ContextVar
@@ -17,7 +18,9 @@ class RequestMeta(NamedTuple):
     user_agent: str | None
 
 
-request_meta_var: ContextVar[RequestMeta | None] = ContextVar("request_meta", default=None)
+request_meta_var: ContextVar[RequestMeta | None] = ContextVar(
+    "request_meta", default=None
+)
 
 
 def current_request_meta() -> RequestMeta:

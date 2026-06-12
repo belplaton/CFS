@@ -1,6 +1,7 @@
 """
 Trash API endpoints
 """
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -10,11 +11,16 @@ from src.models import get_db
 from src.schemas import TrashItemResponse
 from src.services.trash_service import TrashService
 from src.utils.dependencies import get_current_user_id
+from src.utils.rate_limiter import POLICY_DEFAULT, rate_limit
 
 router = APIRouter(prefix="/api/trash", tags=["Trash"])
 
 
-@router.get("/", response_model=list[TrashItemResponse])
+@router.get(
+    "/",
+    response_model=list[TrashItemResponse],
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def list_trash(
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
@@ -23,7 +29,10 @@ async def list_trash(
     return items
 
 
-@router.post("/{item_id}/restore")
+@router.post(
+    "/{item_id}/restore",
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def restore_from_trash(
     item_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
@@ -33,7 +42,10 @@ async def restore_from_trash(
     return {"status": "restored"}
 
 
-@router.delete("/{item_id}/permanent")
+@router.delete(
+    "/{item_id}/permanent",
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def permanent_delete(
     item_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
@@ -43,7 +55,10 @@ async def permanent_delete(
     return {"status": "deleted permanently"}
 
 
-@router.post("/empty")
+@router.post(
+    "/empty",
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def empty_trash(
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),

@@ -8,6 +8,7 @@ load time — the scheduler wires the job only when
 ``settings.trash_cleanup_enabled`` is true, so unit tests can
 import this module without a DB engine.
 """
+
 from __future__ import annotations
 
 from typing import Optional

@@ -15,6 +15,7 @@ Cache strategy
   Auth is down.
 * Cache hit → no network call.
 """
+
 from __future__ import annotations
 
 import time

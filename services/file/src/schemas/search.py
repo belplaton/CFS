@@ -1,6 +1,7 @@
 """
 Pydantic schemas for the search resource.
 """
+
 from __future__ import annotations
 
 from src.schemas.common import ItemResponse

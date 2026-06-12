@@ -6,6 +6,7 @@ and :class:`src.repositories.folder.FolderRepository`; this module only
 encodes the rules: validation, ownership, quota, soft-delete semantics,
 and audit logging.
 """
+
 from __future__ import annotations
 
 import os
@@ -15,7 +16,13 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.exceptions import ConflictError, FileNotFound, FolderNotFound, InvalidFileName, PayloadTooLarge
+from src.exceptions import (
+    ConflictError,
+    FileNotFound,
+    FolderNotFound,
+    InvalidFileName,
+    PayloadTooLarge,
+)
 from src.models.file import File
 from src.repositories.file import FileRepository
 from src.repositories.folder import FolderRepository
@@ -152,9 +159,7 @@ class FileService:
 
         # 5. Conflict resolution (Phase 4.4)
         if on_conflict == "rename":
-            filename = await find_available_name(
-                self.db, user_id, folder_id, filename
-            )
+            filename = await find_available_name(self.db, user_id, folder_id, filename)
         else:
             # Pre-compute a suggestion so the 409 body is useful even
             # if the DB lookup itself fails.  The find_available_name
@@ -391,7 +396,9 @@ class FileService:
         """Yield chunks of the file body for ``StreamingResponse``."""
         file = await self.get_file(file_id, user_id)
         return minio_client.get_stream(
-            settings.minio_bucket, file.minio_object_id, chunk_size=settings.stream_chunk_size
+            settings.minio_bucket,
+            file.minio_object_id,
+            chunk_size=settings.stream_chunk_size,
         ), file
 
     async def get_text_preview(self, file_id: UUID, user_id: UUID) -> tuple[str, bool]:

@@ -1,6 +1,7 @@
 """
 Pydantic schemas for the trash resource.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

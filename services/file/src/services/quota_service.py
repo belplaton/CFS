@@ -10,6 +10,7 @@ The race-condition fix is the important bit: we use a Postgres
 uploads for the same user serialise on a transaction-scoped lock. The
 lock is released automatically on commit or rollback.
 """
+
 from __future__ import annotations
 
 from uuid import UUID
@@ -27,6 +28,7 @@ logger = get_logger(__name__)
 
 # ==================== Quota tier ====================
 
+
 async def get_storage_quota(user_id: UUID) -> int:
     """
     Return the quota in bytes for the given user (Phase 4.3).
@@ -41,6 +43,7 @@ async def get_storage_quota(user_id: UUID) -> int:
 
 
 # ==================== Atomic reservation ====================
+
 
 async def reserve_quota(
     db: AsyncSession,

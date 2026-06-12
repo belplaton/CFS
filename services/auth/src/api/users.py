@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.exceptions import UserNotFoundError
+from src.exceptions import ServiceAuthError, UserNotFoundError
 from src.models import get_db
 from src.repositories.user import UserRepository
 from src.schemas import QuotaResponse
@@ -32,11 +32,7 @@ def _require_service_key(
     secret OR a user JWT (left for the future ``/api/auth/...`` use).
     """
     if x_api_key is None or x_api_key != settings.service_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid X-API-Key",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
+        raise ServiceAuthError("Missing or invalid X-API-Key")
 
 
 @router.get(

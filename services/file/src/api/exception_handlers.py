@@ -4,6 +4,7 @@ Centralised exception → HTTP response mapping.
 Keeping this in one module means services stay HTTP-agnostic: they raise
 domain exceptions, and the API layer turns them into well-formed responses.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict
@@ -20,7 +21,9 @@ from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def _error_payload(code: str, detail: str, extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def _error_payload(
+    code: str, detail: str, extra: Dict[str, Any] | None = None
+) -> Dict[str, Any]:
     body: Dict[str, Any] = {"error": code, "detail": detail}
     if extra:
         body["extra"] = extra
@@ -35,7 +38,9 @@ async def domain_error_handler(_: Request, exc: DomainError) -> JSONResponse:
     )
 
 
-async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+async def http_exception_handler(
+    _: Request, exc: StarletteHTTPException
+) -> JSONResponse:
     # FastAPI's built-in ``HTTPException`` — used by deps that still raise it
     # (e.g. bearer-scheme auto-errors). Map to the same shape.
     code_map = {
@@ -58,7 +63,9 @@ async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSO
     )
 
 
-async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_error_handler(
+    _: Request, exc: RequestValidationError
+) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=_error_payload(

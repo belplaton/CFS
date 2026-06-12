@@ -18,6 +18,7 @@ before raising :class:`~src.exceptions.FileNameConflict`.  Anything
 beyond that almost certainly indicates a bug in the upload path, not
 a real user scenario.
 """
+
 from __future__ import annotations
 
 import os

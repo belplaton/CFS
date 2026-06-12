@@ -1,6 +1,7 @@
 """
 Folder model for File Service (SQLAlchemy 2.0 style).
 """
+
 from __future__ import annotations
 
 from datetime import datetime

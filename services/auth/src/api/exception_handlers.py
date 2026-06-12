@@ -17,6 +17,7 @@ from src.exceptions import (
     DomainError,
     InvalidTokenError,
     RateLimitError,
+    ServiceAuthError,
     UserAlreadyExistsError,
     UserNotFoundError,
     ValidationError,
@@ -81,6 +82,7 @@ def install_exception_handlers(app: FastAPI) -> None:
         UserNotFoundError,
         UserAlreadyExistsError,
         InvalidTokenError,
+        ServiceAuthError,
         ValidationError,
         DatabaseError,
     ):

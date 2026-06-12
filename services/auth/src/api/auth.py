@@ -3,10 +3,11 @@ Auth API endpoints
 """
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.exceptions import AuthenticationError
 from src.models import get_db
 from src.models.user import User
 from src.schemas import (
@@ -73,18 +74,11 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
         # secondary mitigation against per-account credential stuffing.
         import asyncio
         await asyncio.sleep(1)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise AuthenticationError("Incorrect email or password")
 
     # Explicitly check bool value for SQLAlchemy columns
     if not bool(user.is_active):  # type: ignore[arg-type]
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
-        )
+        raise AuthenticationError("Inactive user")
 
     # Create tokens
     tokens = await user_service.create_tokens_for_user(user)
@@ -113,65 +107,34 @@ async def refresh_token(
     Uses a Bearer refresh token and returns a fresh access/refresh pair.
     """
     if credentials is None or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise AuthenticationError("Could not validate credentials")
 
     try:
         payload = decode_token(credentials.credentials)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise AuthenticationError("Could not validate credentials") from exc
 
     if payload.get("type") != "refresh":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise AuthenticationError("Could not validate credentials")
 
     if await is_refresh_token_revoked(credentials.credentials):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise AuthenticationError("Could not validate credentials")
 
     sub = payload.get("sub")
     if sub is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise AuthenticationError("Could not validate credentials")
 
     try:
         user_id = UUID(str(sub))
     except (ValueError, TypeError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise AuthenticationError("Could not validate credentials") from exc
 
     user_service = UserService(db)
     user = await user_service.get_user_by_id(user_id)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise AuthenticationError("Could not validate credentials")
     if not bool(user.is_active):  # type: ignore[arg-type]
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user",
-        )
+        raise AuthenticationError("Inactive user")
     return await user_service.create_tokens_for_user(user)
 
 
@@ -185,11 +148,7 @@ async def logout(
     try:
         await revoke_refresh_token(request.refresh_token)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise AuthenticationError("Could not validate credentials") from exc
 
     return {"message": "Logged out successfully"}
 

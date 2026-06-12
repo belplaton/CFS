@@ -7,19 +7,24 @@ from typing import AsyncIterator
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import pool, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 os.environ.setdefault("ENV", "development")
 os.environ.setdefault("JWT_SECRET", "pytest-auth-secret")
 os.environ.setdefault("SERVICE_API_KEY", "pytest-auth-service-key")
-os.environ.setdefault(
-    "DATABASE_URL",
-    "postgresql+asyncpg://placeholder:placeholder@localhost:5432/placeholder",
-)
 
-from src.models import Base, get_db
-from src.main import app
+_DB_URL = os.environ.get("DATABASE_URL", "")
+USE_DIRECT_DB = "localhost:5432" not in _DB_URL and "postgresql+asyncpg://" in _DB_URL
+
+if not USE_DIRECT_DB:
+    os.environ.setdefault(
+        "DATABASE_URL",
+        "postgresql+asyncpg://placeholder:placeholder@localhost:5432/placeholder",
+    )
+
+from src.models import Base, get_db  # noqa: E402
+from src.main import app  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -28,6 +33,8 @@ def anyio_backend():
 
 
 def _can_start_docker() -> bool:
+    if USE_DIRECT_DB:
+        return False
     if os.environ.get("SKIP_TESTCONTAINERS") == "1":
         return False
     try:
@@ -64,19 +71,24 @@ def database_url(postgres_container) -> str:
     raise RuntimeError(f"Unexpected DB URL scheme: {raw}")
 
 
-@pytest_asyncio.fixture(scope="session")
-async def test_engine(database_url):
-    engine = create_async_engine(
-        database_url,
-        echo=False,
-        pool_pre_ping=True,
-    )
+@pytest_asyncio.fixture
+async def test_engine(request):
+    """Per-test engine to avoid event loop mismatches with asyncpg."""
+    if USE_DIRECT_DB:
+        url = os.environ["DATABASE_URL"]
+    else:
+        container = request.getfixturevalue("postgres_container")
+        raw = container.get_connection_url()
+        url = raw if raw.startswith("postgresql+asyncpg://") else raw.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    engine = create_async_engine(url, echo=False, poolclass=pool.NullPool)
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
         await conn.run_sync(Base.metadata.create_all)
     yield engine
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
     await engine.dispose()
 
 
@@ -104,6 +116,20 @@ async def override_get_db(test_engine):
         yield
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_rate_limits():
+    """Clear rate-limit keys from Redis between tests."""
+    yield
+    try:
+        from src.utils.redis_client import get_redis
+        redis = get_redis()
+        keys = await redis.keys("rl:auth:*")
+        if keys:
+            await redis.delete(*keys)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @pytest_asyncio.fixture

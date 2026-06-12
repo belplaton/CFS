@@ -61,6 +61,17 @@ class RateLimitError(DomainError):
         self.window = window
 
 
+class ServiceAuthError(DomainError):
+    """Service-to-service authentication failure (X-API-Key).
+
+    Maps to 401 but does NOT add ``WWW-Authenticate: Bearer`` — the
+    caller used an API key, not a Bearer token.
+    """
+
+    code = "service_auth_error"
+    status_code = 401
+
+
 class ConfigurationError(DomainError):
     code = "configuration_error"
     status_code = 500

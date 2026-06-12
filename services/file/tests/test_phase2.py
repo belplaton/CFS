@@ -13,6 +13,7 @@ The remaining Phase 2 surfaces (audit log persistence, schema
 migrations) are covered by the testcontainers tests in
 ``test_file_service.py``.
 """
+
 from __future__ import annotations
 
 import json
@@ -43,7 +44,9 @@ class FakeRedis:
     """
 
     def __init__(self) -> None:
-        self.kv: dict[str, tuple[str, int | None]] = {}  # key -> (value, expire-at or None)
+        self.kv: dict[
+            str, tuple[str, int | None]
+        ] = {}  # key -> (value, expire-at or None)
         self.pings = 0
 
     async def ping(self) -> bool:
@@ -83,7 +86,11 @@ class FakeRedis:
     def _expire_if_needed(self, key: str) -> None:
         import time
 
-        if key in self.kv and self.kv[key][1] is not None and time.time() > self.kv[key][1]:
+        if (
+            key in self.kv
+            and self.kv[key][1] is not None
+            and time.time() > self.kv[key][1]
+        ):
             del self.kv[key]
 
 
@@ -183,7 +190,9 @@ async def test_request_meta_captures_ip_and_ua() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rate_limiter_increments_and_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_rate_limiter_increments_and_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from src.utils import rate_limiter
 
     fake = FakeRedis()
@@ -193,23 +202,25 @@ async def test_rate_limiter_increments_and_blocks(monkeypatch: pytest.MonkeyPatc
     for _ in range(5):
         await rate_limiter.check_rate_limit(
             rate_limiter.RateLimit(name="test", limit=5, window_seconds=60),
-            user_id="00000000-0000-0000-0000-000000000001",
+            key_id="00000000-0000-0000-0000-000000000001",
         )
 
     # 6th call is over the limit.
-    from fastapi import HTTPException
+    from src.exceptions import RateLimitExceeded
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(RateLimitExceeded) as exc:
         await rate_limiter.check_rate_limit(
             rate_limiter.RateLimit(name="test", limit=5, window_seconds=60),
-            user_id="00000000-0000-0000-0000-000000000001",
+            key_id="00000000-0000-0000-0000-000000000001",
         )
     assert exc.value.status_code == 429
     assert "Retry-After" in exc.value.headers
 
 
 @pytest.mark.asyncio
-async def test_rate_limiter_fails_open_on_redis_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_rate_limiter_fails_open_on_redis_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from src.utils import rate_limiter
 
     class BrokenRedis:
@@ -224,7 +235,7 @@ async def test_rate_limiter_fails_open_on_redis_error(monkeypatch: pytest.Monkey
     # Should not raise even though Redis is down.
     await rate_limiter.check_rate_limit(
         rate_limiter.RateLimit(name="test", limit=1, window_seconds=60),
-        user_id="00000000-0000-0000-0000-000000000002",
+        key_id="00000000-0000-0000-0000-000000000002",
     )
 
 
@@ -247,7 +258,9 @@ async def test_idempotency_cache_round_trip() -> None:
     assert cached is None
 
     await set_cached(
-        fake, user_id, key,
+        fake,
+        user_id,
+        key,
         status_code=201,
         body=b'{"id":"abc"}',
         body_fingerprint="deadbeef",
@@ -296,7 +309,9 @@ async def test_health_ok_when_all_probes_succeed() -> None:
 
     app = _build_health_app()
     # All probes default to ok=True.
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         r = await client.get("/health")
     assert r.status_code == 200
     body = r.json()
@@ -316,7 +331,9 @@ async def test_health_503_when_one_probe_fails() -> None:
     db_probe.state["ok"] = False
     db_probe.state["error"] = "connection refused"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         r = await client.get("/health")
     assert r.status_code == 503
     body = r.json()
@@ -397,7 +414,9 @@ async def test_access_log_emits_event_for_normal_request(access_log_capture) -> 
         return {"ok": True}
 
     app = _build_access_app(echo)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         r = await client.get(
             "/echo",
             headers={"X-Request-ID": "req-abc", "User-Agent": "test/1.0"},
@@ -426,7 +445,9 @@ async def test_access_log_uses_slow_event_above_threshold(access_log_capture) ->
         return {"ok": True}
 
     app = _build_access_app(slow, slow_request_threshold_ms=1)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         r = await client.get("/echo")
     assert r.status_code == 200
 
@@ -450,7 +471,9 @@ async def test_access_log_skips_excluded_paths(access_log_capture) -> None:
     app.add_middleware(AccessLogMiddleware)
     app.add_api_route("/health", health, methods=["GET"])
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         r = await client.get("/health")
     assert r.status_code == 200
     assert access_log_capture == []
@@ -472,7 +495,9 @@ async def test_access_log_emits_warning_on_5xx(access_log_capture) -> None:
     app.add_middleware(AccessLogMiddleware)
     app.add_api_route("/boom", boom, methods=["GET"])
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         r = await client.get("/boom")
     assert r.status_code == 500
 

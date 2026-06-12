@@ -2,7 +2,7 @@
 Redis-backed fixed-window rate limiter.
 
 Used to throttle abuse on expensive endpoints (uploads, deletes,
-search, ...).  Returns 429 with ``Retry-After`` once the per-user
+search, ...).  Returns 429 with ``Retry-After`` once the per-IP
 counter for the current window exceeds the configured limit.
 
 The implementation is intentionally simple — a single ``INCR`` +
@@ -19,6 +19,7 @@ fire ``2 * limit`` requests across two adjacent windows.  For the file
 service this is acceptable; switch to a sliding window or token bucket
 only if measured abuse patterns demand it.
 """
+
 from __future__ import annotations
 
 import time
@@ -26,10 +27,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 import redis.asyncio as aioredis
-from fastapi import Depends, HTTPException, status
+from fastapi import Request
 
 from src.config import settings
-from src.utils.dependencies import get_current_user_id
 from src.utils.logging import get_logger
 
 
@@ -68,9 +68,9 @@ async def close_redis() -> None:
 class RateLimit:
     """A single rate-limit policy."""
 
-    name: str           # Bucket name; included in the Redis key and logs.
-    limit: int          # Max requests in the window.
-    window_seconds: int # Window size.
+    name: str  # Bucket name; included in the Redis key and logs.
+    limit: int  # Max requests in the window.
+    window_seconds: int  # Window size.
 
 
 # Sensible defaults for the file service.  These are not security
@@ -80,18 +80,34 @@ POLICY_DELETE = RateLimit(name="delete", limit=60, window_seconds=60)
 POLICY_DEFAULT = RateLimit(name="default", limit=300, window_seconds=60)
 
 
+# ==================== Client IP resolution ====================
+
+
+def _resolve_client_ip(request: Request) -> str:
+    """Extract the client IP from X-Forwarded-For / X-Real-IP / peer."""
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        return xff.split(",")[0].strip()
+    xri = request.headers.get("X-Real-IP")
+    if xri:
+        return xri.strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
 # ==================== Core check ====================
 
 
-async def _consume(redis: aioredis.Redis, policy: RateLimit, user_id: str) -> int:
+async def _consume(redis: aioredis.Redis, policy: RateLimit, key_id: str) -> int:
     """
-    Atomically increment the per-user counter for ``policy`` and return
+    Atomically increment the per-key counter for ``policy`` and return
     the new value.  The counter expires after one window so that an
-    inactive user does not accumulate counters indefinitely.
+    inactive key does not accumulate counters indefinitely.
     """
     now = int(time.time())
     window_id = now // policy.window_seconds
-    key = f"rl:{policy.name}:{user_id}:{window_id}"
+    key = f"rl:{policy.name}:{key_id}:{window_id}"
     pipe = redis.pipeline(transaction=True)
     pipe.incr(key)
     pipe.expire(key, policy.window_seconds)
@@ -101,18 +117,19 @@ async def _consume(redis: aioredis.Redis, policy: RateLimit, user_id: str) -> in
 
 async def check_rate_limit(
     policy: RateLimit,
-    user_id: str,
+    key_id: str,
 ) -> None:
     """
-    Verify the user is under ``policy``.  Raises ``HTTPException(429)``
-    with a ``Retry-After`` header when the limit is exceeded.
+    Verify the caller is under ``policy``.  Raises a ``DomainError``
+    (mapped to 429 by ``exception_handlers``) with the contract-
+    compliant JSON body when the limit is exceeded.
 
     On Redis errors we fail **open**: a broken rate limiter must never
     break legitimate uploads.  The error is logged at WARN for
     operators.
     """
     try:
-        count = await _consume(get_redis(), policy, user_id)
+        count = await _consume(get_redis(), policy, key_id)
     except Exception as exc:  # noqa: BLE001 — fail open on any redis error
         logger.warning("rate_limiter.redis_error", error=str(exc), policy=policy.name)
         return
@@ -121,16 +138,14 @@ async def check_rate_limit(
         retry_after = policy.window_seconds - (int(time.time()) % policy.window_seconds)
         logger.info(
             "rate_limiter.exceeded",
-            user_id=user_id,
+            key_id=key_id,
             policy=policy.name,
             count=count,
             limit=policy.limit,
         )
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Rate limit exceeded",
-            headers={"Retry-After": str(max(1, retry_after))},
-        )
+        from src.exceptions import RateLimitExceeded
+
+        raise RateLimitExceeded(retry_after=max(1, retry_after))
 
 
 # ==================== FastAPI dependency factory ====================
@@ -139,7 +154,8 @@ async def check_rate_limit(
 def rate_limit(policy: RateLimit):
     """
     Build a FastAPI dependency that enforces ``policy`` for the
-    authenticated user.
+    caller's client IP (via ``X-Forwarded-For`` / ``X-Real-IP`` /
+    ``request.client.host``).
 
     Usage::
 
@@ -147,7 +163,8 @@ def rate_limit(policy: RateLimit):
         async def upload(...): ...
     """
 
-    async def _dep(user_id=Depends(get_current_user_id)) -> None:
-        await check_rate_limit(policy, str(user_id))
+    async def _dep(request: Request) -> None:
+        ip = _resolve_client_ip(request)
+        await check_rate_limit(policy, ip)
 
     return _dep

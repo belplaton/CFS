@@ -4,6 +4,7 @@ when the immediate peer is a trusted proxy) and the User-Agent into a
 ContextVar so service code can attribute events without taking a
 ``Request`` argument.
 """
+
 from __future__ import annotations
 
 from starlette.middleware.base import BaseHTTPMiddleware

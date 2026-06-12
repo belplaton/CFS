@@ -1,6 +1,7 @@
 """
 Folder API endpoints (Phase 1: cycle-safe, uses domain exceptions).
 """
+
 from typing import Optional
 from uuid import UUID
 
@@ -11,12 +12,18 @@ from src.models import get_db
 from src.schemas import FolderCreate, FolderResponse, FolderUpdate
 from src.services.folder_service import FolderService
 from src.utils.dependencies import get_current_user_id
+from src.utils.rate_limiter import POLICY_DEFAULT, rate_limit
 
 
 router = APIRouter(prefix="/api/folders", tags=["Folders"])
 
 
-@router.post("/", response_model=FolderResponse, status_code=201)
+@router.post(
+    "/",
+    response_model=FolderResponse,
+    status_code=201,
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def create_folder(
     body: FolderCreate,
     user_id: UUID = Depends(get_current_user_id),
@@ -25,7 +32,11 @@ async def create_folder(
     return await FolderService(db).create_folder(user_id, body.name, body.parent_id)
 
 
-@router.get("/", response_model=list[FolderResponse])
+@router.get(
+    "/",
+    response_model=list[FolderResponse],
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def list_folders(
     parent_id: Optional[UUID] = None,
     limit: int = 200,
@@ -33,10 +44,16 @@ async def list_folders(
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    return await FolderService(db).list_folders(user_id, parent_id, limit=limit, offset=offset)
+    return await FolderService(db).list_folders(
+        user_id, parent_id, limit=limit, offset=offset
+    )
 
 
-@router.get("/{folder_id}", response_model=FolderResponse)
+@router.get(
+    "/{folder_id}",
+    response_model=FolderResponse,
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def get_folder(
     folder_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
@@ -45,7 +62,10 @@ async def get_folder(
     return await FolderService(db).get_folder(folder_id, user_id)
 
 
-@router.patch("/{folder_id}")
+@router.patch(
+    "/{folder_id}",
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def update_folder(
     folder_id: UUID,
     body: FolderUpdate,
@@ -61,7 +81,10 @@ async def update_folder(
     return {"status": "updated"}
 
 
-@router.delete("/{folder_id}")
+@router.delete(
+    "/{folder_id}",
+    dependencies=[Depends(rate_limit(POLICY_DEFAULT))],
+)
 async def delete_folder(
     folder_id: UUID,
     user_id: UUID = Depends(get_current_user_id),

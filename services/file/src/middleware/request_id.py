@@ -2,6 +2,7 @@
 ASGI middleware: generate (or accept) ``X-Request-ID`` per request and
 expose it to structlog's context.
 """
+
 from __future__ import annotations
 
 from uuid import uuid4
@@ -10,7 +11,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from src.utils.logging import bind_contextvars, clear_contextvars, get_logger, request_id_var
+from src.utils.logging import (
+    bind_contextvars,
+    clear_contextvars,
+    get_logger,
+    request_id_var,
+)
 
 
 _HEADER = "X-Request-ID"
@@ -39,7 +45,9 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         try:
             response: Response = await call_next(request)
         except Exception:
-            _logger.exception("request.failed", method=request.method, path=request.url.path)
+            _logger.exception(
+                "request.failed", method=request.method, path=request.url.path
+            )
             raise
         finally:
             request_id_var.reset(token)

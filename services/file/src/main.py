@@ -7,6 +7,7 @@ process (the Docker entrypoint in ``docker-compose.yml`` does this).
 The lifespan below does **not** touch the database schema, so multiple
 replicas of the service can boot in parallel without race conditions.
 """
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -69,4 +70,5 @@ app.include_router(api_router)
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

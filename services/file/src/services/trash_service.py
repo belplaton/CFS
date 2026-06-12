@@ -8,6 +8,7 @@ Phase 4 will add:
 All DB queries go through the file / folder repositories so this
 module is purely orchestration.
 """
+
 from __future__ import annotations
 
 from uuid import UUID
@@ -38,24 +39,28 @@ class TrashService:
 
         items: list[dict] = []
         for f in folders:
-            items.append({
-                "id": f.id,
-                "kind": "folder",
-                "name": f.name,
-                "size": 0,
-                "original_parent_id": f.parent_id,
-                "deleted_at": f.deleted_at,
-            })
+            items.append(
+                {
+                    "id": f.id,
+                    "kind": "folder",
+                    "name": f.name,
+                    "size": 0,
+                    "original_parent_id": f.parent_id,
+                    "deleted_at": f.deleted_at,
+                }
+            )
         for f in files:
-            items.append({
-                "id": f.id,
-                "kind": "file",
-                "name": f.name,
-                "size": f.size,
-                "mime_type": f.mime_type,
-                "original_parent_id": f.folder_id,
-                "deleted_at": f.deleted_at,
-            })
+            items.append(
+                {
+                    "id": f.id,
+                    "kind": "file",
+                    "name": f.name,
+                    "size": f.size,
+                    "mime_type": f.mime_type,
+                    "original_parent_id": f.folder_id,
+                    "deleted_at": f.deleted_at,
+                }
+            )
         return items
 
     async def restore_item(self, item_id: UUID, user_id: UUID) -> None:

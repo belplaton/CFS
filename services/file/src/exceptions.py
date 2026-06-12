@@ -7,6 +7,7 @@ service layer MUST NOT raise ``HTTPException`` — keeping it HTTP-agnostic
 makes the services reusable from other transports (CLI jobs, message
 consumers, ...) and gives us a single, auditable place to map errors.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
@@ -33,8 +34,10 @@ class DomainError(Exception):
 
 # ==================== Auth ====================
 
+
 class AuthenticationError(DomainError):
     """Caller is not authenticated or the token is invalid."""
+
     status_code = 401
     code = "unauthenticated"
     headers = {"WWW-Authenticate": "Bearer"}
@@ -42,11 +45,13 @@ class AuthenticationError(DomainError):
 
 class AccessDenied(DomainError):
     """Authenticated user is not allowed to act on this resource."""
+
     status_code = 403
     code = "access_denied"
 
 
 # ==================== Not Found ====================
+
 
 class FileNotFound(DomainError):
     status_code = 404
@@ -59,6 +64,7 @@ class FolderNotFound(DomainError):
 
 
 # ==================== Validation ====================
+
 
 class InvalidFileName(DomainError):
     status_code = 400
@@ -77,6 +83,7 @@ class PayloadTooLarge(DomainError):
 
 # ==================== Resource state ====================
 
+
 class QuotaExceeded(DomainError):
     status_code = 413
     code = "quota_exceeded"
@@ -84,14 +91,35 @@ class QuotaExceeded(DomainError):
 
 class CycleDetected(DomainError):
     """Tried to move a folder into one of its descendants."""
+
     status_code = 409
     code = "cycle_detected"
 
 
 class ConflictError(DomainError):
     """Generic business conflict (e.g. duplicate name in the same folder)."""
+
     status_code = 409
     code = "conflict"
+
+
+class RateLimitExceeded(DomainError):
+    """Too many requests — contract-compliant 429 response."""
+
+    status_code = 429
+    code = "rate_limit_exceeded"
+
+    def __init__(
+        self,
+        detail: Optional[str] = None,
+        *,
+        retry_after: int = 30,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        merged = dict(extra or {})
+        merged.setdefault("retry_after", retry_after)
+        super().__init__(detail or "Rate limit exceeded", extra=merged)
+        self.headers = {"Retry-After": str(retry_after)}
 
 
 class FileNameConflict(DomainError):

@@ -21,6 +21,7 @@ Design notes
   lock around the job or wire APScheduler's ``coalesce=True`` and
   tolerate duplicate work — the DB delete is idempotent.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone

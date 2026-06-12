@@ -7,6 +7,7 @@ Run with::
 
 The testcontainers fixtures skip gracefully when Docker is unavailable.
 """
+
 from __future__ import annotations
 
 
@@ -28,6 +29,7 @@ from tests.conftest import switch_user
 
 # ==================== Folder Tests ====================
 
+
 @pytest.mark.asyncio
 async def test_create_folder(async_client):
     response = await async_client.post("/api/folders/", json={"name": "My Documents"})
@@ -43,10 +45,13 @@ async def test_create_nested_folder(async_client):
     parent_resp = await async_client.post("/api/folders/", json={"name": "Parent"})
     parent_id = parent_resp.json()["id"]
 
-    child_resp = await async_client.post("/api/folders/", json={
-        "name": "Child",
-        "parent_id": parent_id,
-    })
+    child_resp = await async_client.post(
+        "/api/folders/",
+        json={
+            "name": "Child",
+            "parent_id": parent_id,
+        },
+    )
     assert child_resp.status_code == 201
     assert child_resp.json()["parent_id"] == parent_id
 
@@ -100,6 +105,7 @@ async def test_get_folder_not_found(async_client):
 
 
 # ==================== File Tests ====================
+
 
 @pytest.mark.asyncio
 async def test_upload_file(async_client):
@@ -204,6 +210,7 @@ async def test_delete_file_moves_to_trash(async_client, fake_minio):
 
 # ==================== Trash Tests ====================
 
+
 @pytest.mark.asyncio
 async def test_trash_list(async_client):
     resp = await async_client.post(
@@ -237,6 +244,7 @@ async def test_restore_from_trash(async_client):
 
 # ==================== Search Tests ====================
 
+
 @pytest.mark.asyncio
 async def test_search(async_client):
     await async_client.post(
@@ -257,6 +265,7 @@ async def test_search(async_client):
 
 # ==================== Quota Tests ====================
 
+
 @pytest.mark.asyncio
 async def test_quota(async_client):
     response = await async_client.get("/api/files/quota")
@@ -268,6 +277,7 @@ async def test_quota(async_client):
 
 
 # ==================== Security: Auth ====================
+
 
 @pytest.mark.asyncio
 async def test_unauthorized_without_token(async_client, override_get_db, fake_minio):
@@ -283,7 +293,9 @@ async def test_unauthorized_without_token(async_client, override_get_db, fake_mi
 
 
 @pytest.mark.asyncio
-async def test_refresh_token_rejected_for_data_api(async_client, override_get_db, fake_minio):
+async def test_refresh_token_rejected_for_data_api(
+    async_client, override_get_db, fake_minio
+):
     """A token with type=refresh must NOT be accepted on data endpoints."""
     app.dependency_overrides.pop(get_current_user_id, None)
     try:
@@ -298,6 +310,7 @@ async def test_refresh_token_rejected_for_data_api(async_client, override_get_db
 
 
 # ==================== Security: IDOR (cross-tenant access) ====================
+
 
 @pytest.mark.asyncio
 async def test_user_cannot_read_another_users_file(async_client, fake_minio):
@@ -316,9 +329,11 @@ async def test_user_cannot_read_another_users_file(async_client, fake_minio):
     # Bob also cannot download, rename, move, delete, restore.
     assert (await async_client.get(f"/api/files/{file_id}/download")).status_code == 404
     assert (await async_client.delete(f"/api/files/{file_id}")).status_code == 404
-    assert (await async_client.patch(
-        f"/api/files/{file_id}/rename", json={"name": "pwned.txt"}
-    )).status_code == 404
+    assert (
+        await async_client.patch(
+            f"/api/files/{file_id}/rename", json={"name": "pwned.txt"}
+        )
+    ).status_code == 404
 
     # Switch back to Alice and confirm the file is still hers.
     switch_user(USER_ALICE)
@@ -337,9 +352,11 @@ async def test_user_cannot_list_another_users_folders(async_client):
 
 # ==================== Security: Upload validation ====================
 
+
 @pytest.mark.asyncio
 async def test_oversized_upload_rejected(async_client):
     from src.config import settings
+
     payload = b"x" * (settings.max_upload_size + 1)
     response = await async_client.post(
         "/api/files/upload",
@@ -406,6 +423,7 @@ async def test_filename_nul_byte_stripped(async_client):
 
 # ==================== Security: Folder cycles ====================
 
+
 @pytest.mark.asyncio
 async def test_folder_move_cycle_rejected(async_client):
     parent = await async_client.post("/api/folders/", json={"name": "Parent"})
@@ -426,12 +444,16 @@ async def test_folder_move_cycle_rejected(async_client):
 @pytest.mark.asyncio
 async def test_deep_folder_move_cycle_rejected(async_client):
     a = (await async_client.post("/api/folders/", json={"name": "A"})).json()
-    b = (await async_client.post(
-        "/api/folders/", json={"name": "B", "parent_id": a["id"]}
-    )).json()
-    c = (await async_client.post(
-        "/api/folders/", json={"name": "C", "parent_id": b["id"]}
-    )).json()
+    b = (
+        await async_client.post(
+            "/api/folders/", json={"name": "B", "parent_id": a["id"]}
+        )
+    ).json()
+    c = (
+        await async_client.post(
+            "/api/folders/", json={"name": "C", "parent_id": b["id"]}
+        )
+    ).json()
 
     # Try to move A under C — C is a descendant of A.
     response = await async_client.patch(
@@ -441,6 +463,7 @@ async def test_deep_folder_move_cycle_rejected(async_client):
 
 
 # ==================== Security: Soft delete visibility ====================
+
 
 @pytest.mark.asyncio
 async def test_soft_deleted_file_not_in_listing(async_client):
@@ -470,6 +493,7 @@ async def test_soft_deleted_file_not_downloadable(async_client, fake_minio):
 
 # ==================== Security: Quota ====================
 
+
 @pytest.mark.asyncio
 async def test_quota_enforced(async_client, monkeypatch):
 
@@ -488,6 +512,7 @@ async def test_quota_enforced(async_client, monkeypatch):
 
 
 # ==================== Security: Quota race condition ====================
+
 
 @pytest.mark.asyncio
 async def test_concurrent_uploads_do_not_exceed_quota(async_client, monkeypatch):
@@ -512,6 +537,7 @@ async def test_concurrent_uploads_do_not_exceed_quota(async_client, monkeypatch)
 
 
 # ==================== Security: Download ====================
+
 
 @pytest.mark.asyncio
 async def test_download_proxies_content(async_client, fake_minio):

@@ -19,6 +19,7 @@ around forever.
 
 References: Stripe / IETF draft-ietf-httpapi-idempotency-key-header.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -150,6 +151,7 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
 
         # Buffer the body so we can both fingerprint and forward it.
         body_bytes = await request.body()
+
         # Re-inject the body for downstream handlers.
         async def _receive() -> dict[str, Any]:
             return {"type": "http.request", "body": body_bytes, "more_body": False}

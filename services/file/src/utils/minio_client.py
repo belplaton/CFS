@@ -9,6 +9,7 @@ The ``files`` and ``trash`` prefixes are used for normal and soft-deleted
 objects respectively. The ``preview`` prefix is reserved for the Preview
 service.
 """
+
 from __future__ import annotations
 
 import io
@@ -65,6 +66,7 @@ def _ensure_bucket(client: Minio) -> None:
 
 # ==================== Object-key helpers ====================
 
+
 def files_object_key(user_id: UUID, ext: str) -> str:
     """Build a unique key for a newly uploaded file."""
     return f"{user_id}/{settings.minio_prefix_files}/{uuidlib.uuid4()}{_ext(ext)}"
@@ -88,6 +90,7 @@ def extract_extension(object_name: str) -> str:
 
 
 # ==================== High-level operations ====================
+
 
 def put_bytes(
     bucket: str,

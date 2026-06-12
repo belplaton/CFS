@@ -6,6 +6,7 @@ operation.  Failure to write the audit log must never break the user
 request, so the insert is wrapped in a try/except and failures are
 logged at WARN level for follow-up.
 """
+
 from __future__ import annotations
 
 from typing import Any, Mapping, Optional

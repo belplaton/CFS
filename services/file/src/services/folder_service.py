@@ -5,6 +5,7 @@ Cycle detection on ``move_folder`` is the main business rule;
 everything else (CRUD, listing, soft-delete) goes through
 :class:`src.repositories.folder.FolderRepository`.
 """
+
 from __future__ import annotations
 
 from uuid import UUID
@@ -110,7 +111,9 @@ class FolderService:
         )
         return folder
 
-    async def rename_folder(self, folder_id: UUID, user_id: UUID, raw_name: str) -> None:
+    async def rename_folder(
+        self, folder_id: UUID, user_id: UUID, raw_name: str
+    ) -> None:
         folder = await self.get_folder(folder_id, user_id)
         new_name = sanitize_filename(raw_name)
         folder.name = new_name
@@ -173,18 +176,14 @@ class FolderService:
         frontier: list[UUID] = [root_id]
         hops = 0
         while frontier:
-            children = await FolderRepository.list_child_ids(
-                self.db, frontier, user_id
-            )
+            children = await FolderRepository.list_child_ids(self.db, frontier, user_id)
             if not children:
                 break
             subtree.extend(children)
             frontier = children
             hops += 1
             if hops > _MAX_ANCESTOR_HOPS:
-                raise CycleDetected(
-                    "Folder hierarchy is too deep to safely cascade"
-                )
+                raise CycleDetected("Folder hierarchy is too deep to safely cascade")
 
         # 2. Mark every folder in the subtree as deleted.
         for fid in subtree:
@@ -272,7 +271,9 @@ class FolderService:
         subtree_set = set(subtree)
 
         if folder.parent_id is not None:
-            parent = await FolderRepository.get_active(self.db, folder.parent_id, user_id)
+            parent = await FolderRepository.get_active(
+                self.db, folder.parent_id, user_id
+            )
             if parent is None:
                 raise ConflictError(
                     "Cannot restore folder: original parent is missing or still trashed"
@@ -285,9 +286,7 @@ class FolderService:
                 folders.append(row)
 
         files = list(
-            await FolderRepository.list_files_in_folders(
-                self.db, subtree, user_id
-            )
+            await FolderRepository.list_files_in_folders(self.db, subtree, user_id)
         )
 
         await self._assert_restore_conflicts(user_id, folders, files, subtree_set)
@@ -336,9 +335,7 @@ class FolderService:
 
         subtree = await self._collect_subtree_ids(folder.id, user_id, any_state=True)
         files = list(
-            await FolderRepository.list_files_in_folders(
-                self.db, subtree, user_id
-            )
+            await FolderRepository.list_files_in_folders(self.db, subtree, user_id)
         )
 
         for file in files:
@@ -397,8 +394,10 @@ class FolderService:
         subtree_set: set[UUID],
     ) -> None:
         for folder in folders:
-            existing_folder_names = await FolderRepository.list_existing_names_in_parent(
-                self.db, user_id, folder.parent_id
+            existing_folder_names = (
+                await FolderRepository.list_existing_names_in_parent(
+                    self.db, user_id, folder.parent_id
+                )
             )
             if folder.name in existing_folder_names:
                 raise ConflictError(
@@ -407,7 +406,9 @@ class FolderService:
 
         for file in files:
             if file.folder_id is not None and file.folder_id not in subtree_set:
-                parent = await FolderRepository.get_active(self.db, file.folder_id, user_id)
+                parent = await FolderRepository.get_active(
+                    self.db, file.folder_id, user_id
+                )
                 if parent is None:
                     raise ConflictError(
                         f"Cannot restore file '{file.name}': original parent is missing or still trashed"
@@ -431,9 +432,7 @@ class FolderService:
         hops = 0
         while current_id is not None:
             if current_id == moving_id:
-                raise CycleDetected(
-                    "Cannot move a folder into one of its descendants"
-                )
+                raise CycleDetected("Cannot move a folder into one of its descendants")
             current_id = await FolderRepository.get_parent_id(
                 self.db, current_id, user_id
             )

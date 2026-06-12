@@ -11,9 +11,12 @@ from datetime import datetime, timedelta, timezone
 import secrets
 from uuid import UUID
 
-from fastapi import HTTPException, status
-
 from src.config import settings
+from src.exceptions import (
+    AuthenticationError,
+    UserAlreadyExistsError,
+    UserNotFoundError,
+)
 from src.models.token import VerificationToken
 from src.models.user import User
 from src.repositories.user import UserRepository
@@ -49,16 +52,14 @@ class UserService:
     async def create_user(self, user_data: UserCreate) -> User:
         """Create a new user.
 
-        Raises ``HTTPException(400)`` if the email is already registered.
+        Raises ``UserAlreadyExistsError`` (409) if the email is already
+        registered.
         """
         normalized_email = user_data.email.lower().strip()
 
         existing = await self.get_user_by_email(normalized_email)
         if existing is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered",
-            )
+            raise UserAlreadyExistsError("Email already registered")
 
         user = User(
             email=normalized_email,
@@ -155,17 +156,11 @@ class UserService:
             now=datetime.now(timezone.utc),
         )
         if token is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification token",
-            )
+            raise AuthenticationError("Invalid or expired verification token")
 
         user = await self.get_user_by_id(token.user_id)
         if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-            )
+            raise UserNotFoundError("User not found")
 
         await self.verify_user_email(user)
         await VerificationTokenRepository.mark_used(self.db, token)
@@ -196,17 +191,11 @@ class UserService:
             now=datetime.now(timezone.utc),
         )
         if token is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired reset token",
-            )
+            raise AuthenticationError("Invalid or expired reset token")
 
         user = await self.get_user_by_id(token.user_id)
         if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-            )
+            raise UserNotFoundError("User not found")
 
         user.password_hash = get_password_hash(new_password)
         await VerificationTokenRepository.mark_used(self.db, token)

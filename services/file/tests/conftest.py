@@ -13,6 +13,7 @@ MinIO
 A small in-memory fake (``FakeMinioStorage``) stands in for MinIO. Each
 test gets its own empty store via the ``fake_minio`` fixture.
 """
+
 from __future__ import annotations
 
 # Set required env vars BEFORE importing anything from ``src`` so that
@@ -53,6 +54,7 @@ get_settings.cache_clear()
 
 
 # ==================== PostgreSQL via testcontainers ====================
+
 
 def _can_start_docker() -> bool:
     """Skip testcontainers gracefully when Docker is not available."""
@@ -99,6 +101,7 @@ def database_url(postgres_container) -> str:
 
 # ==================== Engine (session-scoped) ====================
 
+
 @pytest_asyncio.fixture(scope="session")
 async def test_engine(database_url):
     """Session-scoped async engine with schema bootstrapped."""
@@ -124,6 +127,7 @@ async def db_session(test_engine) -> AsyncIterator[AsyncSession]:
 
 
 # ==================== FastAPI dependency overrides ====================
+
 
 @pytest_asyncio.fixture
 async def override_get_db(test_engine):
@@ -153,6 +157,7 @@ async def override_get_db(test_engine):
 def _make_user_override(user_id: UUID):
     async def _override() -> UUID:
         return user_id
+
     return _override
 
 
@@ -171,6 +176,7 @@ def switch_user(user_id: UUID) -> None:
 
 
 # ==================== MinIO fake ====================
+
 
 class FakeMinioStorage:
     """Tiny in-memory stand-in for MinIO."""
@@ -203,47 +209,65 @@ def fake_minio(monkeypatch):
 
     monkeypatch.setattr(minio_module, "get_minio_client", lambda: storage)
     monkeypatch.setattr(
-        minio_module, "put_bytes",
-        lambda bucket, key, data, content_type="application/octet-stream":
-            storage.put(bucket, key, data, content_type),
+        minio_module,
+        "put_bytes",
+        lambda bucket, key, data, content_type="application/octet-stream": storage.put(
+            bucket, key, data, content_type
+        ),
     )
     monkeypatch.setattr(
-        minio_module, "remove",
+        minio_module,
+        "remove",
         lambda bucket, key: storage.remove(bucket, key),
     )
     monkeypatch.setattr(
-        minio_module, "move",
-        lambda bucket, src, dst, content_type="application/octet-stream":
-            storage.move(bucket, src, dst, content_type),
+        minio_module,
+        "move",
+        lambda bucket, src, dst, content_type="application/octet-stream": storage.move(
+            bucket, src, dst, content_type
+        ),
     )
     monkeypatch.setattr(
-        minio_module, "get_stream",
-        lambda bucket, key, chunk_size=1024 * 1024:
-            iter([storage.get(bucket, key) or b""]),
+        minio_module,
+        "get_stream",
+        lambda bucket, key, chunk_size=1024 * 1024: iter(
+            [storage.get(bucket, key) or b""]
+        ),
     )
     monkeypatch.setattr(
-        minio_module, "presigned_get_url",
+        minio_module,
+        "presigned_get_url",
         lambda bucket, key, expires=None: f"http://minio.test/{bucket}/{key}",
     )
     monkeypatch.setattr(
-        minio_module, "stat_size",
+        minio_module,
+        "stat_size",
         lambda bucket, key: len(storage.get(bucket, key) or b""),
     )
     monkeypatch.setattr(
-        minio_module, "files_object_key",
-        lambda user_id, ext: f"{user_id}/files/{uuid.uuid4()}{('.' + ext) if ext else ''}",
+        minio_module,
+        "files_object_key",
+        lambda user_id, ext: (
+            f"{user_id}/files/{uuid.uuid4()}{('.' + ext) if ext else ''}"
+        ),
     )
     monkeypatch.setattr(
-        minio_module, "trash_object_key",
-        lambda user_id, ext: f"{user_id}/trash/{uuid.uuid4()}{('.' + ext) if ext else ''}",
+        minio_module,
+        "trash_object_key",
+        lambda user_id, ext: (
+            f"{user_id}/trash/{uuid.uuid4()}{('.' + ext) if ext else ''}"
+        ),
     )
     return storage
 
 
 # ==================== Async HTTP client ====================
 
+
 @pytest_asyncio.fixture
-async def async_client(override_get_db, override_auth, fake_minio) -> AsyncIterator[AsyncClient]:
+async def async_client(
+    override_get_db, override_auth, fake_minio
+) -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client

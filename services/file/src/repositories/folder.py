@@ -4,6 +4,7 @@ Folder repository — all SQL for the ``folders`` table.
 Same contract as :mod:`src.repositories.file`: stateless methods that
 take an ``AsyncSession`` and return ORM models (or ``None``).
 """
+
 from __future__ import annotations
 
 from typing import Optional, Sequence
@@ -101,9 +102,7 @@ class FolderRepository:
         return result.scalars().all()
 
     @staticmethod
-    async def list_trashed(
-        db: AsyncSession, user_id: UUID
-    ) -> Sequence[Folder]:
+    async def list_trashed(db: AsyncSession, user_id: UUID) -> Sequence[Folder]:
         result = await db.execute(
             select(Folder)
             .where(

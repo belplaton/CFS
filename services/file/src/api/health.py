@@ -9,6 +9,7 @@ balancers and operators can see which subsystem is down.
 The handler never raises: any probe failure is captured in the
 response and logged so an outage leaves a paper trail.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -93,7 +94,9 @@ async def health() -> JSONResponse:
         results[name] = result
         if not result.get("ok"):
             healthy = False
-            logger.warning("health.probe_failed", subsystem=name, error=result.get("error"))
+            logger.warning(
+                "health.probe_failed", subsystem=name, error=result.get("error")
+            )
 
     body: Dict[str, Any] = {
         "status": "healthy" if healthy else "unhealthy",
