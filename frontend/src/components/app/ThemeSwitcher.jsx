@@ -1,5 +1,5 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { Check, Laptop, MoonStar, Palette, SunMedium } from 'lucide-react'
+import { Check, Laptop, Palette, SunMedium } from 'lucide-react'
 
 import { useI18n } from '@/components/app/I18nProvider'
 import { themeOptions, useTheme } from '@/components/app/ThemeProvider'
@@ -13,10 +13,6 @@ function getThemeIcon(resolvedTheme, selectedTheme) {
 
   if (resolvedTheme === 'midnight') {
     return Palette
-  }
-
-  if (resolvedTheme === 'dark') {
-    return MoonStar
   }
 
   return SunMedium

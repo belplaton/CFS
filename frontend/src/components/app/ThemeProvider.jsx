@@ -2,16 +2,13 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 
 const STORAGE_KEY = 'cfs-theme-preference'
 const MEDIA_QUERY = '(prefers-color-scheme: dark)'
-const VALID_THEMES = new Set(['light', 'dark', 'midnight', 'system'])
+const VALID_THEMES = new Set(['light', 'midnight', 'system'])
 
 const ThemeContext = createContext(null)
 
 export const themeOptions = [
   {
     value: 'light',
-  },
-  {
-    value: 'dark',
   },
   {
     value: 'midnight',

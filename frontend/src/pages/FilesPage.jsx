@@ -1,11 +1,14 @@
 import { useDeferredValue, useEffect, useState } from 'react'
 import {
+  Check,
+  ChevronDown,
   FolderPlus,
   Grid2X2,
   List,
   Search,
   UploadCloud,
 } from 'lucide-react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 
 import FileBrowser from '@/components/files/FileBrowser'
 import { useI18n } from '@/components/app/I18nProvider'
@@ -14,6 +17,7 @@ import PreviewModal from '@/components/files/PreviewModal'
 import ThemeSwitcher from '@/components/app/ThemeSwitcher'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import { ROOT_FOLDER_ID } from '@/lib/files-constants'
 import { buildFolderSizeCache, getItemEffectiveSize, matchesTypeFilter } from '@/lib/file-metrics'
 import { canMoveItemToParent, getDescendantIds, useFileStore } from '@/store/file-store'
@@ -113,6 +117,16 @@ function FilesPage() {
   const [renamingItem, setRenamingItem] = useState(null)
   const [selectedItemIds, setSelectedItemIds] = useState([])
   const [typeFilter, setTypeFilter] = useState('all')
+
+  const SORT_OPTIONS = [
+    { value: 'updatedAt', label: t('files.sort.updatedDesc') },
+    { value: 'updatedAtAsc', label: t('files.sort.updatedAsc') },
+    { value: 'name', label: t('files.sort.nameAsc') },
+    { value: 'nameDesc', label: t('files.sort.nameDesc') },
+    { value: 'size', label: t('files.sort.sizeDesc') },
+    { value: 'sizeAsc', label: t('files.sort.sizeAsc') },
+  ]
+
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const isSearchMode = deferredSearchQuery.trim().length > 0
 
@@ -260,18 +274,36 @@ function FilesPage() {
             >
               <Grid2X2 className="h-4 w-4" />
             </Button>
-            <select
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
-              onChange={(event) => setSortBy(event.target.value)}
-              value={sortBy}
-            >
-              <option value="updatedAt">{t('files.sort.updatedDesc')}</option>
-              <option value="updatedAtAsc">{t('files.sort.updatedAsc')}</option>
-              <option value="name">{t('files.sort.nameAsc')}</option>
-              <option value="nameDesc">{t('files.sort.nameDesc')}</option>
-              <option value="size">{t('files.sort.sizeDesc')}</option>
-              <option value="sizeAsc">{t('files.sort.sizeAsc')}</option>
-            </select>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button className="inline-flex h-9 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm shadow-sm outline-none transition-colors hover:bg-muted focus:bg-muted data-[state=open]:bg-muted">
+                  {SORT_OPTIONS.find((o) => o.value === sortBy)?.label ?? sortBy}
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </DropdownMenu.Trigger>
+
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  align="start"
+                  className="z-50 min-w-[200px] overflow-hidden rounded-xl border bg-popover p-1.5 shadow-xl"
+                  sideOffset={4}
+                >
+                  {SORT_OPTIONS.map((item) => (
+                    <DropdownMenu.Item
+                      className={cn(
+                        'flex cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm outline-none transition hover:bg-muted focus:bg-muted',
+                        sortBy === item.value && 'bg-muted',
+                      )}
+                      key={item.value}
+                      onSelect={() => setSortBy(item.value)}
+                    >
+                      {item.label}
+                      {sortBy === item.value && <Check className="h-4 w-4 text-foreground" />}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
 
             <LanguageSwitcher compact />
             <ThemeSwitcher compact />
@@ -291,19 +323,44 @@ function FilesPage() {
             />
           </div>
 
-          <select
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
-            onChange={(event) => setTypeFilter(event.target.value)}
-            value={typeFilter}
-          >
-            <option value="all">{t('files.typeFilter.all')}</option>
-            <option value="folders">{t('files.typeFilter.folders')}</option>
-            <option value="files">{t('files.typeFilter.files')}</option>
-            <option value="images">{t('files.typeFilter.images')}</option>
-            <option value="pdf">{t('files.typeFilter.pdf')}</option>
-            <option value="documents">{t('files.typeFilter.documents')}</option>
-            <option value="archives">{t('files.typeFilter.archives')}</option>
-          </select>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button className="inline-flex h-10 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm shadow-sm outline-none transition-colors hover:bg-muted focus:bg-muted data-[state=open]:bg-muted">
+                {typeFilter === 'all' ? t('files.typeFilter.all') : t(`files.typeFilter.${typeFilter}`)}
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </DropdownMenu.Trigger>
+
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="start"
+                className="z-50 min-w-[180px] overflow-hidden rounded-xl border bg-popover p-1.5 shadow-xl"
+                sideOffset={4}
+              >
+                {[
+                  { value: 'all', key: 'all' },
+                  { value: 'folders', key: 'folders' },
+                  { value: 'files', key: 'files' },
+                  { value: 'images', key: 'images' },
+                  { value: 'pdf', key: 'pdf' },
+                  { value: 'documents', key: 'documents' },
+                  { value: 'archives', key: 'archives' },
+                ].map((item) => (
+                  <DropdownMenu.Item
+                    className={cn(
+                      'flex cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm outline-none transition hover:bg-muted focus:bg-muted',
+                      typeFilter === item.value && 'bg-muted',
+                    )}
+                    key={item.value}
+                    onSelect={() => setTypeFilter(item.value)}
+                  >
+                    {t(`files.typeFilter.${item.key}`)}
+                    {typeFilter === item.value && <Check className="h-4 w-4 text-foreground" />}
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
 
           <div className="flex flex-wrap gap-2">
             <Button className="h-10 gap-2 px-4" disabled={isMutating} onClick={() => setIsCreateOpen(true)} variant="outline">

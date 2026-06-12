@@ -35,10 +35,6 @@
         "label": "Light",
         "description": "Light neutral palette"
       },
-      "dark": {
-        "label": "Dark",
-        "description": "High-contrast dark theme"
-      },
       "midnight": {
         "label": "Midnight Blue",
         "description": "Dark theme with blue tint"
