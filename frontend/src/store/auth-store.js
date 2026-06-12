@@ -50,6 +50,7 @@ export const useAuthStore = create(
             accessToken: access_token,
             refreshToken: refresh_token,
             isAuthenticated: true,
+            hasHydrated: true,
           })
 
           await get().refreshProfile()
@@ -75,6 +76,7 @@ export const useAuthStore = create(
             accessToken: access_token,
             refreshToken: refresh_token,
             isAuthenticated: true,
+            hasHydrated: true,
           })
 
           await get().refreshProfile()
@@ -98,10 +100,7 @@ export const useAuthStore = create(
           set({ user, isAuthenticated: true, error: null })
           return user
         } catch (error) {
-          set({
-            ...initialState,
-            error: error.response?.data?.detail || 'Session expired',
-          })
+          set({ error: error.response?.data?.detail || 'Session expired' })
           return null
         }
       },

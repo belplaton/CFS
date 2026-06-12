@@ -21,7 +21,6 @@ function AppShell() {
   const navigate = useNavigate()
   const logout = useAuthStore((state) => state.logout)
   const accessToken = useAuthStore((state) => state.accessToken)
-  const hasHydrated = useAuthStore((state) => state.hasHydrated)
   const refreshProfile = useAuthStore((state) => state.refreshProfile)
   const user = useAuthStore((state) => state.user)
   const bootstrap = useFileStore((state) => state.bootstrap)
@@ -35,7 +34,7 @@ function AppShell() {
   const displayEmail = user?.email?.trim() || t('appShell.noEmail')
 
   useEffect(() => {
-    if (!hasHydrated || !accessToken) {
+    if (!accessToken) {
       return
     }
 
@@ -45,7 +44,7 @@ function AppShell() {
         await bootstrap()
       }
     })()
-  }, [accessToken, bootstrap, hasHydrated, refreshProfile])
+  }, [accessToken, bootstrap, refreshProfile])
 
   return (
     <div className="surface-grid min-h-screen bg-background text-foreground">

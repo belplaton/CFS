@@ -18,6 +18,7 @@ from typing import BinaryIO, Optional
 from uuid import UUID
 
 from minio import Minio
+from minio.commonconfig import CopySource
 from minio.error import S3Error
 
 from src.config import settings
@@ -146,7 +147,7 @@ def move(
     client.copy_object(
         bucket_name=bucket,
         object_name=destination,
-        source=f"{bucket}/{source}",
+        source=CopySource(bucket, source),
         metadata={"Content-Type": content_type},
     )
     client.remove_object(bucket, source)
@@ -157,8 +158,11 @@ def get_stream(bucket: str, object_name: str, chunk_size: int):
     client = get_minio_client()
     response = client.get_object(bucket, object_name)
     try:
-        for chunk in response.stream(chunk_size=chunk_size):
-            yield chunk
+        while True:
+            data = response.read(chunk_size)
+            if not data:
+                break
+            yield data
     finally:
         response.close()
         response.release_conn()
