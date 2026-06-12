@@ -9,17 +9,20 @@ from __future__ import annotations
 
 from io import BytesIO
 import json
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+import uuid
 
-from docx import Document
-from fastapi import FastAPI, Header, HTTPException, status
+import httpx
+import structlog
+from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from docx import Document
 from openpyxl import load_workbook
 from pydantic import BaseModel
 
 from src.config import settings
 
+
+logger = structlog.get_logger()
 
 TEXT_MIME_TYPES = {
     "text/plain",
@@ -48,16 +51,38 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "preview"}
+    file_service_ok = True
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{settings.file_service_url.rstrip('/')}/health")
+            file_service_ok = resp.status_code == 200
+    except Exception:
+        file_service_ok = False
+
+    healthy = file_service_ok
+    return {
+        "status": "healthy" if healthy else "degraded",
+        "service": "preview",
+        "file_service": "healthy" if file_service_ok else "unreachable",
+    }
 
 
 @app.get("/api/preview/")
@@ -86,24 +111,39 @@ def _require_auth_header(authorization: str | None) -> str:
     return authorization
 
 
-def _fetch_file_bytes(file_id: str, authorization: str) -> tuple[bytes, str]:
-    request = Request(
-        f"{settings.file_service_url.rstrip('/')}/api/files/{file_id}/download",
-        headers={"Authorization": authorization},
-    )
-    try:
-        with urlopen(request, timeout=30) as response:
-            content = response.read()
-            mime_type = response.headers.get_content_type()
-            return content, mime_type
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="ignore") or "Unable to fetch source file"
-        raise HTTPException(status_code=exc.code, detail=detail) from exc
-    except URLError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Preview service cannot reach file service",
-        ) from exc
+async def _fetch_file_bytes(file_id: str, authorization: str) -> tuple[bytes, str]:
+    url = f"{settings.file_service_url.rstrip('/')}/api/files/{file_id}/download"
+    headers = {"Authorization": authorization}
+    if settings.service_api_key:
+        headers["X-API-Key"] = settings.service_api_key
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(url, headers=headers)
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="File service request timed out",
+            )
+        except httpx.RequestError:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Preview service cannot reach file service",
+            )
+
+        if response.status_code >= 400:
+            detail = response.text or "Unable to fetch source file"
+            raise HTTPException(status_code=response.status_code, detail=detail)
+
+        content = response.content
+        if len(content) > settings.preview_max_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File exceeds maximum preview size of {settings.preview_max_size} bytes",
+            )
+
+        mime_type = response.headers.get("content-type", "").split(";")[0].strip()
+        return content, mime_type
 
 
 def _limit_text(value: str, max_chars: int = 40000) -> tuple[str, bool]:
@@ -165,7 +205,10 @@ def _preview_xlsx_bytes(content: bytes) -> TextPreviewResponse:
 @app.get("/api/preview/{file_id}", response_model=TextPreviewResponse)
 async def get_preview(file_id: str, authorization: str | None = Header(default=None)):
     auth_header = _require_auth_header(authorization)
-    content, mime_type = _fetch_file_bytes(file_id, auth_header)
+
+    logger.info("preview_request", file_id=file_id)
+
+    content, mime_type = await _fetch_file_bytes(file_id, auth_header)
 
     if mime_type == "application/json":
         return _preview_json_bytes(content)
@@ -186,7 +229,11 @@ async def get_preview(file_id: str, authorization: str | None = Header(default=N
 
 
 @app.get("/api/preview/{file_id}/thumbnail")
-async def get_thumbnail(file_id: str):
+async def get_thumbnail(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+):
+    _require_auth_header(authorization)
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="Thumbnails are not enabled yet",
@@ -194,7 +241,11 @@ async def get_thumbnail(file_id: str):
 
 
 @app.post("/api/preview/{file_id}/generate")
-async def generate_preview(file_id: str):
+async def generate_preview(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+):
+    _require_auth_header(authorization)
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="Background preview generation is not enabled yet",
@@ -202,7 +253,11 @@ async def generate_preview(file_id: str):
 
 
 @app.delete("/api/preview/{file_id}")
-async def delete_preview(file_id: str):
+async def delete_preview(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+):
+    _require_auth_header(authorization)
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="Stored previews are not enabled yet",

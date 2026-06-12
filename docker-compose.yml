@@ -62,27 +62,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ==================== PostgreSQL - Preview Service ====================
-  postgres-preview:
-    image: postgres:15-alpine
-    container_name: cloud-postgres-preview
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-cloudstorage}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cloudstorage_secret}
-      POSTGRES_DB: ${POSTGRES_DB_PREVIEW:-cloudstorage_preview}
-    volumes:
-      - postgres_preview_data:/var/lib/postgresql/data
-    ports:
-      - "5435:5432"
-    networks:
-      - cloud-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cloudstorage}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # ==================== MinIO ====================
   minio:
     image: minio/minio:latest
@@ -196,21 +175,10 @@ services:
     container_name: cloud-preview
     restart: unless-stopped
     environment:
-      - ENV=${ENV:-development}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cloudstorage}:${POSTGRES_PASSWORD:-cloudstorage_secret}@postgres-preview:5432/${POSTGRES_DB_PREVIEW:-cloudstorage_preview}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin_secret}
-      - PREVIEW_CACHE_TTL=${PREVIEW_CACHE_TTL:-3600}
       - SERVICE_API_KEY=${SERVICE_API_KEY:-change-this-in-production}
       - FILE_SERVICE_URL=http://file:8000
-      - REDIS_URL=redis://redis:6379/0
     depends_on:
-      postgres-preview:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      redis:
+      file:
         condition: service_healthy
     networks:
       - cloud-network
@@ -240,8 +208,6 @@ volumes:
   postgres_auth_data:
     driver: local
   postgres_file_data:
-    driver: local
-  postgres_preview_data:
     driver: local
   minio_data:
     driver: local

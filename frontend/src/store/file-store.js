@@ -273,12 +273,10 @@ export const useFileStore = create(
       },
 
       bootstrap: async () => {
-        await Promise.all([
-          get().refreshFolderTree(),
-          get().refreshQuota(),
-          get().fetchTrash(),
-          get().loadFolder(get().currentFolderId || ROOT_FOLDER_ID),
-        ])
+        await get().refreshFolderTree()
+        await get().refreshQuota()
+        await get().fetchTrash()
+        await get().loadFolder(get().currentFolderId || ROOT_FOLDER_ID)
       },
 
       openFolder: async (folderId) => {

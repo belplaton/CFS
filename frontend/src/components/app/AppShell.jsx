@@ -39,10 +39,8 @@ function AppShell() {
     }
 
     void (async () => {
-      const profile = await refreshProfile()
-      if (profile) {
-        await bootstrap()
-      }
+      await refreshProfile()
+      await bootstrap()
     })()
   }, [accessToken, bootstrap, refreshProfile])
 
