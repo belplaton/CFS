@@ -99,7 +99,7 @@ async function collectFolders(parentId = null, accumulator = [], seen = new Set(
   const response = await client.get('/folders/', {
     params: { parent_id: parentId ?? undefined, limit: 200, offset: 0 },
   })
-  const folders = response.data.map(normalizeItem)
+  const folders = response.data.map((item) => ({ ...normalizeItem(item), kind: item.kind ?? 'folder' }))
 
   for (const folder of folders) {
     if (seen.has(folder.id)) {

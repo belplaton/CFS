@@ -27,12 +27,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-cloudstorage}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cloudstorage_secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB_AUTH:-cloudstorage_auth}
     volumes:
       - postgres_auth_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
     networks:
       - cloud-network
     healthcheck:
@@ -48,12 +46,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-cloudstorage}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cloudstorage_secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB_FILE:-cloudstorage_file}
     volumes:
       - postgres_file_data:/var/lib/postgresql/data
-    ports:
-      - "5434:5432"
     networks:
       - cloud-network
     healthcheck:
@@ -69,13 +65,12 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_secret}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
     volumes:
       - minio_data:/data
     ports:
       - "9000:9000"
-      - "9001:9001"
     networks:
       - cloud-network
     healthcheck:
@@ -89,7 +84,7 @@ services:
     image: redis:7-alpine
     container_name: cloud-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
     volumes:
       - redis_data:/data
     ports:
@@ -97,7 +92,7 @@ services:
     networks:
       - cloud-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -109,23 +104,25 @@ services:
       dockerfile: Dockerfile
     container_name: cloud-auth
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       - ENV=${ENV:-development}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cloudstorage}:${POSTGRES_PASSWORD:-cloudstorage_secret}@postgres-auth:5432/${POSTGRES_DB_AUTH:-cloudstorage_auth}
-      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cloudstorage}:${POSTGRES_PASSWORD}@postgres-auth:5432/${POSTGRES_DB_AUTH:-cloudstorage_auth}
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env}
       - JWT_ALGORITHM=HS256
       - ACCESS_TOKEN_EXPIRE_MINUTES=30
       - REFRESH_TOKEN_EXPIRE_DAYS=7
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - SMTP_HOST=${SMTP_HOST:-smtp.mailtrap.io}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-noreply@cloudstorage.local}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8080}
-      - REDIS_URL=redis://redis:6379/0
-      - SERVICE_API_KEY=${SERVICE_API_KEY:-change-this-in-production}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - SERVICE_API_KEY=${SERVICE_API_KEY:?Set SERVICE_API_KEY in .env}
       - AUTH_SERVICE_URL=http://auth:8000
     depends_on:
       postgres-auth:
@@ -134,6 +131,11 @@ services:
         condition: service_healthy
     networks:
       - cloud-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ==================== File Service ====================
   file:
@@ -142,21 +144,25 @@ services:
       dockerfile: Dockerfile
     container_name: cloud-file
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       - ENV=${ENV:-development}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cloudstorage}:${POSTGRES_PASSWORD:-cloudstorage_secret}@postgres-file:5432/${POSTGRES_DB_FILE:-cloudstorage_file}
-      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cloudstorage}:${POSTGRES_PASSWORD}@postgres-file:5432/${POSTGRES_DB_FILE:-cloudstorage_file}
+      - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=HS256
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin_secret}
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
       - MINIO_BUCKET=${MINIO_BUCKET:-cloudstorage}
       - DEFAULT_STORAGE_QUOTA=${DEFAULT_STORAGE_QUOTA:-5368709120}
       - PREMIUM_STORAGE_QUOTA=${PREMIUM_STORAGE_QUOTA:-107374182400}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8080}
-      - SERVICE_API_KEY=${SERVICE_API_KEY:-change-this-in-production}
+      - SERVICE_API_KEY=${SERVICE_API_KEY}
       - AUTH_SERVICE_URL=http://auth:8000
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
     depends_on:
       postgres-file:
         condition: service_healthy
@@ -166,6 +172,11 @@ services:
         condition: service_healthy
     networks:
       - cloud-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ==================== Preview Service ====================
   preview:
@@ -174,14 +185,23 @@ services:
       dockerfile: Dockerfile
     container_name: cloud-preview
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
-      - SERVICE_API_KEY=${SERVICE_API_KEY:-change-this-in-production}
+      - SERVICE_API_KEY=${SERVICE_API_KEY}
       - FILE_SERVICE_URL=http://file:8000
     depends_on:
       file:
         condition: service_healthy
     networks:
       - cloud-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ==================== Frontend ====================
   # Build and serve static files via nginx

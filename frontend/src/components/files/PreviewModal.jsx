@@ -58,7 +58,7 @@ function PreviewBody({ item, previewBlobUrl, previewError, previewText, previewS
     return (
       <div className="rounded-xl border bg-card p-8">
         <FileSpreadsheet className="h-10 w-10 text-foreground" />
-        <p className="mt-6 text-2xl font-semibold">{t('preview.documentPlaceholder')}</p>
+        <p className="mt-6 text-2xl font-semibold">{t('preview.documentPreview')}</p>
         <pre className="mt-6 max-h-[420px] overflow-auto whitespace-pre-wrap text-sm leading-6 text-foreground">
           {previewText || t('preview.documentEmpty')}
         </pre>
@@ -69,9 +69,9 @@ function PreviewBody({ item, previewBlobUrl, previewError, previewText, previewS
   return (
     <div className="rounded-xl border bg-card p-8">
       <FileType2 className="h-10 w-10 text-muted-foreground" />
-      <p className="mt-6 text-2xl font-semibold">{t('preview.metadataPlaceholder')}</p>
+      <p className="mt-6 text-2xl font-semibold">{t('preview.metadataPreview')}</p>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        {t('preview.fallbackBackendStatus')}
+        {t('preview.metadataDescription')}
       </p>
     </div>
   )
@@ -236,13 +236,6 @@ function PreviewModal({ item, onClose, onDownload }) {
                   <dd>{formatDate(item.updatedAt, language)}</dd>
                 </div>
               </dl>
-            </div>
-
-            <div className="rounded-xl border bg-card p-6">
-              <p className="text-sm text-muted-foreground">{t('preview.sourceTitle')}</p>
-              <p className="mt-4 text-sm leading-7 text-muted-foreground">
-                {t('preview.sourceDescription')}
-              </p>
             </div>
 
             <Button className="w-full gap-2" onClick={() => onDownload(item)} variant="outline">

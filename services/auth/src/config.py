@@ -48,10 +48,6 @@ class Settings(BaseSettings):
     default_storage_quota: int = 5 * 1024 * 1024 * 1024        # 5 GB
     premium_storage_quota: int = 100 * 1024 * 1024 * 1024      # 100 GB
 
-    # ==================== OAuth Google ====================
-    google_client_id: Optional[str] = None
-    google_client_secret: Optional[str] = None
-
     # ==================== Email (SMTP) ====================
     smtp_host: Optional[str] = None
     smtp_port: int = 587

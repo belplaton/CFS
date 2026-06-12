@@ -27,17 +27,6 @@ function AuthShell({ eyebrow, title, description, footer, children }) {
           <p className="mt-10 text-sm text-muted-foreground">{eyebrow}</p>
           <h1 className="mt-3 max-w-2xl text-4xl font-semibold leading-tight md:text-5xl">{title}</h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground">{description}</p>
-
-          <div className="mt-10 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-lg border bg-muted/40 p-5">
-              <p className="text-sm text-muted-foreground">{t('authShell.uiCoverageTitle')}</p>
-              <p className="mt-3 text-lg font-medium">{t('authShell.uiCoverageValue')}</p>
-            </div>
-            <div className="rounded-lg border bg-muted/40 p-5">
-              <p className="text-sm text-muted-foreground">{t('authShell.backendWaitingTitle')}</p>
-              <p className="mt-3 text-lg font-medium">{t('authShell.backendWaitingValue')}</p>
-            </div>
-          </div>
         </div>
 
         <div className="rounded-xl border bg-card p-6 shadow-sm md:p-8">

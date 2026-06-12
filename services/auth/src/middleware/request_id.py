@@ -25,6 +25,9 @@ _logger = get_logger("http")
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         request_id = request.headers.get(_HEADER) or uuid4().hex
+        # Truncate to prevent log injection / disk exhaustion from
+        # maliciously long client-supplied request IDs.
+        request_id = request_id[:64]
         # ``request.state`` is the cross-middleware channel — outer
         # middlewares (e.g. ``AccessLogMiddleware``) read it AFTER
         # their inner siblings have run, by which time the contextvar

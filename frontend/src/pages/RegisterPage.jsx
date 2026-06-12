@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useI18n } from "@/components/app/I18nProvider";
@@ -12,14 +12,20 @@ function RegisterPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const register = useAuthStore((state) => state.register);
-  const requestEmailVerification = useAuthStore((state) => state.requestEmailVerification);
   const isLoading = useAuthStore((state) => state.isLoading);
   const error = useAuthStore((state) => state.error);
   const clearError = useAuthStore((state) => state.clearError);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   useEffect(() => {
     clearError();
   }, [clearError]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/app/files", { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -28,17 +34,7 @@ function RegisterPage() {
     const password = formData.get("password")?.toString() ?? "";
     const fullName = formData.get("fullName")?.toString().trim() ?? "";
 
-    const result = await register(email, password, fullName);
-
-    if (result.success) {
-      const verification = await requestEmailVerification();
-      if (verification.success && verification.actionUrl) {
-        window.location.assign(verification.actionUrl);
-        return;
-      }
-
-      navigate("/app/files");
-    }
+    await register(email, password, fullName);
   };
 
   return (

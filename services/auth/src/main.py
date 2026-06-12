@@ -48,9 +48,19 @@ app.add_middleware(AccessLogMiddleware)
 # CORS is normally enforced by the API gateway (Caddy) — this is
 # only useful when the service is run standalone (e.g. integration
 # tests).  Origins are configurable via ``CORS_ORIGINS``.
+_cors_origins = list(settings.cors_origins_set)
+if not _cors_origins:
+    import logging as _logging
+
+    _logging.getLogger("auth-service").warning(
+        "CORS_ORIGINS is empty — falling back to wildcard ['*']. "
+        "Set CORS_ORIGINS in production."
+    )
+    _cors_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(settings.cors_origins_set) or ["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-API-Key"],

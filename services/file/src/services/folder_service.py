@@ -14,7 +14,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.exceptions import ConflictError, CycleDetected, FolderNotFound
+from src.exceptions import ConflictError, CycleDetected, FileNameConflict, FolderNotFound
 from src.models.folder import Folder
 from src.repositories.file import FileRepository
 from src.repositories.folder import FolderRepository
@@ -116,6 +116,15 @@ class FolderService:
     ) -> None:
         folder = await self.get_folder(folder_id, user_id)
         new_name = sanitize_filename(raw_name)
+        # Check for name conflict in the same parent.
+        existing_names = await FolderRepository.list_existing_names_in_parent(
+            self.db, user_id, folder.parent_id
+        )
+        if new_name in existing_names and new_name != folder.name:
+            raise FileNameConflict(
+                f"A folder named '{new_name}' already exists here",
+                extra={"name": new_name},
+            )
         folder.name = new_name
         await self.db.flush()
         await audit_service.record_event(
@@ -339,8 +348,17 @@ class FolderService:
         )
 
         for file in files:
-            minio_client.remove(settings.minio_bucket, file.minio_object_id)
+            # DB delete first, then MinIO remove.
             await self.db.delete(file)
+            try:
+                minio_client.remove(settings.minio_bucket, file.minio_object_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "permanent_delete_folder.minio_failed",
+                    file_id=str(file.id),
+                    key=file.minio_object_id,
+                    error=str(exc),
+                )
 
         await self.db.flush()
         await FolderRepository.delete(self.db, folder)

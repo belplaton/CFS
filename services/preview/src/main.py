@@ -33,6 +33,16 @@ TEXT_MIME_TYPES = {
 DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+# Reused across requests — httpx handles connection pooling internally.
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=30.0)
+    return _http_client
+
 
 class TextPreviewResponse(BaseModel):
     kind: str = "text"
@@ -71,9 +81,9 @@ async def add_request_id(request: Request, call_next):
 async def health_check():
     file_service_ok = True
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{settings.file_service_url.rstrip('/')}/health")
-            file_service_ok = resp.status_code == 200
+        client = _get_http_client()
+        resp = await client.get(f"{settings.file_service_url.rstrip('/')}/health")
+        file_service_ok = resp.status_code == 200
     except Exception:
         file_service_ok = False
 
@@ -117,33 +127,36 @@ async def _fetch_file_bytes(file_id: str, authorization: str) -> tuple[bytes, st
     if settings.service_api_key:
         headers["X-API-Key"] = settings.service_api_key
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.get(url, headers=headers)
-        except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="File service request timed out",
-            )
-        except httpx.RequestError:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Preview service cannot reach file service",
-            )
+    client = _get_http_client()
+    try:
+        response = await client.get(url, headers=headers)
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="File service request timed out",
+        )
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Preview service cannot reach file service",
+        )
 
-        if response.status_code >= 400:
-            detail = response.text or "Unable to fetch source file"
-            raise HTTPException(status_code=response.status_code, detail=detail)
+    if response.status_code >= 400:
+        detail = response.text or "Unable to fetch source file"
+        raise HTTPException(status_code=response.status_code, detail=detail)
 
-        content = response.content
+    # Stream-read with size limit to avoid OOM on large files.
+    content = b""
+    async for chunk in response.aiter_bytes(8192):
+        content += chunk
         if len(content) > settings.preview_max_size:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=f"File exceeds maximum preview size of {settings.preview_max_size} bytes",
             )
 
-        mime_type = response.headers.get("content-type", "").split(";")[0].strip()
-        return content, mime_type
+    mime_type = response.headers.get("content-type", "").split(";")[0].strip()
+    return content, mime_type
 
 
 def _limit_text(value: str, max_chars: int = 40000) -> tuple[str, bool]:
@@ -202,8 +215,21 @@ def _preview_xlsx_bytes(content: bytes) -> TextPreviewResponse:
     return TextPreviewResponse(content=limited, truncated=truncated)
 
 
+def _validate_file_id(file_id: str) -> str:
+    """Validate that file_id is a valid UUID to prevent SSRF via path traversal."""
+    try:
+        uuid.UUID(file_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file ID format",
+        )
+    return file_id
+
+
 @app.get("/api/preview/{file_id}", response_model=TextPreviewResponse)
 async def get_preview(file_id: str, authorization: str | None = Header(default=None)):
+    _validate_file_id(file_id)
     auth_header = _require_auth_header(authorization)
 
     logger.info("preview_request", file_id=file_id)
@@ -233,6 +259,7 @@ async def get_thumbnail(
     file_id: str,
     authorization: str | None = Header(default=None),
 ):
+    _validate_file_id(file_id)
     _require_auth_header(authorization)
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
@@ -245,6 +272,7 @@ async def generate_preview(
     file_id: str,
     authorization: str | None = Header(default=None),
 ):
+    _validate_file_id(file_id)
     _require_auth_header(authorization)
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
@@ -257,6 +285,7 @@ async def delete_preview(
     file_id: str,
     authorization: str | None = Header(default=None),
 ):
+    _validate_file_id(file_id)
     _require_auth_header(authorization)
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,

@@ -1,4 +1,4 @@
-import { Navigate, Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 
 import { useI18n } from "@/components/app/I18nProvider";
@@ -18,10 +18,6 @@ function LoginPage() {
   const error = useAuthStore((state) => state.error);
   const clearError = useAuthStore((state) => state.clearError);
 
-  if (isAuthenticated) {
-    return <Navigate replace to="/app/files" />;
-  }
-
   const from = location.state?.from?.pathname ?? "/app/files";
   const notice = location.state?.notice ?? "";
 
@@ -29,17 +25,19 @@ function LoginPage() {
     clearError();
   }, [clearError]);
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, navigate, from]);
+
   const handleLogin = async (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const email = formData.get("email")?.toString().trim() ?? "";
     const password = formData.get("password")?.toString() ?? "";
 
-    const result = await login(email, password);
-
-    if (result.success) {
-      navigate(from, { replace: true });
-    }
+    await login(email, password);
   };
 
   return (

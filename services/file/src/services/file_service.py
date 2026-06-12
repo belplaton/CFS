@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.exceptions import (
     ConflictError,
+    FileNameConflict,
     FileNotFound,
     FolderNotFound,
     InvalidFileName,
@@ -330,8 +331,19 @@ class FileService:
         if file is None:
             raise FileNotFound("File not found")
         file_name = file.name
-        minio_client.remove(settings.minio_bucket, file.minio_object_id)
+        # DB delete first, then MinIO remove — if MinIO fails the row
+        # is already gone and TTL cleanup won't re-process it, but a
+        # missing object is safer than a phantom DB reference.
         await FileRepository.delete(self.db, file)
+        try:
+            minio_client.remove(settings.minio_bucket, file.minio_object_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "permanent_delete.minio_failed",
+                file_id=str(file_id),
+                key=file.minio_object_id,
+                error=str(exc),
+            )
         await audit_service.record_event(
             self.db,
             actor_id=user_id,
@@ -364,6 +376,16 @@ class FileService:
         file = await self.get_file(file_id, user_id)
         new_name = sanitize_filename(name)
         validate_extension(new_name)
+        # Check for name conflict in the same folder.
+        existing_names = await FileRepository.list_existing_names_in_folder(
+            self.db, user_id, file.folder_id
+        )
+        if new_name in existing_names and new_name != file.name:
+            raise FileNameConflict(
+                f"A file named '{new_name}' already exists in this folder",
+                suggested_name=suggest_rename(new_name),
+                extra={"name": new_name},
+            )
         file.name = new_name
         await self.db.flush()
         await audit_service.record_event(

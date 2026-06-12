@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 import client from '@/api/client'
+import { useFileStore } from '@/store/file-store'
 
 function derivePlan(storageQuota = 0) {
   return storageQuota > 5 * 1024 * 1024 * 1024 ? 'Pro' : 'Free'
@@ -26,7 +27,6 @@ const initialState = {
   user: null,
   accessToken: null,
   refreshToken: null,
-  hasHydrated: false,
   isLoading: false,
   error: null,
 }
@@ -50,7 +50,6 @@ export const useAuthStore = create(
             accessToken: access_token,
             refreshToken: refresh_token,
             isAuthenticated: true,
-            hasHydrated: true,
           })
 
           await get().refreshProfile()
@@ -76,7 +75,6 @@ export const useAuthStore = create(
             accessToken: access_token,
             refreshToken: refresh_token,
             isAuthenticated: true,
-            hasHydrated: true,
           })
 
           await get().refreshProfile()
@@ -172,10 +170,14 @@ export const useAuthStore = create(
             // Local logout still wins even if the revoke call fails.
           }
         }
+        useFileStore.getState().resetData()
         set({ ...initialState })
       },
 
-      resetAuthState: () => set({ ...initialState }),
+      resetAuthState: () => {
+        useFileStore.getState().resetData()
+        set({ ...initialState })
+      },
     }),
     {
       name: 'cfs-auth-store',
@@ -190,7 +192,6 @@ export const useAuthStore = create(
           accessToken: state.accessToken,
           refreshToken: state.refreshToken,
         })
-        useAuthStore.setState({ hasHydrated: true })
       },
     },
   ),

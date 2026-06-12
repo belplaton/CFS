@@ -86,7 +86,6 @@ class Settings(BaseSettings):
 
     # ==================== Presigned URLs (Phase 1: tightened) ====================
     # Short-lived URLs for direct MinIO access. Used only by internal flows.
-    presigned_url_expires_seconds: int = 15 * 60  # 15 minutes
     presigned_url_expires: timedelta = Field(
         default_factory=lambda: timedelta(seconds=15 * 60)
     )

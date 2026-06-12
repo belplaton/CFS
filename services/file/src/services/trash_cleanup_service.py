@@ -86,6 +86,9 @@ class TrashCleanupService:
             if not rows:
                 break
             for f in rows:
+                # DB delete first, then MinIO remove — a missing object
+                # is safer than a phantom DB reference.
+                await self.db.delete(f)
                 try:
                     minio_client.remove(settings.minio_bucket, f.minio_object_id)
                 except Exception as exc:  # noqa: BLE001
@@ -95,7 +98,6 @@ class TrashCleanupService:
                         key=f.minio_object_id,
                         error=str(exc),
                     )
-                await self.db.delete(f)
             await self.db.flush()
             f_total += len(rows)
             await audit_service.record_event(

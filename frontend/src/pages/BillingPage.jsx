@@ -68,10 +68,6 @@ function BillingPage() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-foreground">
-        {t('billing.backendStatus')}
-      </div>
-
       <div className="grid gap-4 xl:grid-cols-3">
         {plans.map((plan) => {
           const isCurrent = currentPlan === plan.id

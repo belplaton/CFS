@@ -43,11 +43,11 @@ function ResetPasswordPage() {
         </CardHeader>
         <CardContent className="space-y-4 px-0">
           <div className="rounded-lg border bg-muted/40 p-5 text-sm leading-7 text-foreground">
-            {t('resetPassword.demoEmailInfo', { email })}
+            {t('resetPassword.resetInfo', { email })}
           </div>
           {!canSubmit ? (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-5 text-sm leading-7 text-foreground">
-              {t('resetPassword.backendStatus')}
+              {t('resetPassword.missingToken')}
             </div>
           ) : null}
           {statusMessage ? (

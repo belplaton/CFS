@@ -113,10 +113,7 @@ function AppShell() {
           <div className="mt-auto px-2">
             <Button
               className="w-full justify-center gap-2"
-              onClick={async () => {
-                await logout()
-                navigate('/login')
-              }}
+              onClick={() => logout()}
               variant="outline"
             >
               <LogOut className="h-4 w-4" />

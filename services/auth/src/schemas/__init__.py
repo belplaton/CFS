@@ -92,12 +92,6 @@ class QuotaResponse(BaseModel):
 # ==================== Verification Schemas ====================
 
 
-class EmailVerificationRequest(BaseModel):
-    """Email verification request."""
-
-    token: str
-
-
 class ForgotPasswordRequest(BaseModel):
     """Forgot password request."""
 
@@ -123,13 +117,3 @@ class LogoutRequest(BaseModel):
     """Logout request."""
 
     refresh_token: str
-
-
-# ==================== Google OAuth Schemas ====================
-
-
-class GoogleAuthRequest(BaseModel):
-    """Google OAuth request."""
-
-    code: str
-    redirect_uri: str

@@ -1,12 +1,16 @@
 """
 Auth API endpoints
 """
+from __future__ import annotations
+
+import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import settings
 from src.exceptions import AuthenticationError
 from src.models import get_db
 from src.models.user import User
@@ -69,11 +73,9 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     user = await user_service.authenticate_user(credentials.email, credentials.password)
 
     if not user:
-        # Add a small constant delay to make timing attacks harder.  The
-        # rate limiter above is the primary defence; the delay is a
-        # secondary mitigation against per-account credential stuffing.
-        import asyncio
-        await asyncio.sleep(1)
+        # Small constant delay to mitigate timing attacks.  The rate
+        # limiter is the primary defence; this is secondary.
+        await asyncio.sleep(0.1)
         raise AuthenticationError("Incorrect email or password")
 
     # Explicitly check bool value for SQLAlchemy columns
@@ -169,7 +171,7 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
     response = ActionLinkResponse(
         message="If email exists, password reset instructions will be sent",
     )
-    if token and action_url and request.email:
+    if settings.env != "production" and token and action_url and request.email:
         response.token = token
         response.action_url = action_url
     return response
@@ -198,11 +200,13 @@ async def request_verify_email(
     """
     user_service = UserService(db)
     token, action_url = await user_service.request_email_verification(current_user)
-    return ActionLinkResponse(
+    resp = ActionLinkResponse(
         message="Verification instructions generated",
-        token=token,
-        action_url=action_url,
     )
+    if settings.env != "production":
+        resp.token = token
+        resp.action_url = action_url
+    return resp
 
 
 @router.get("/verify-email")

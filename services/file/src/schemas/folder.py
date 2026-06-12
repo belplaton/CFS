@@ -31,6 +31,7 @@ class FolderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    kind: str = "folder"
     name: str
     parent_id: Optional[UUID] = None
     path: Optional[str] = None

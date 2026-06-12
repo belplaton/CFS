@@ -4,9 +4,13 @@ from __future__ import annotations
 import json
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from fastapi import status
+
+# Valid UUID for test file IDs
+_TEST_FILE_ID = str(uuid4())
 
 
 # ── Health & root ────────────────────────────────────────────────
@@ -18,12 +22,9 @@ async def test_health_check(client):
     mock_response = MagicMock()
     mock_response.status_code = 200
 
-    with patch("src.main.httpx.AsyncClient") as mock_cls:
-        instance = AsyncMock()
-        instance.get = AsyncMock(return_value=mock_response)
-        instance.__aenter__ = AsyncMock(return_value=instance)
-        instance.__aexit__ = AsyncMock(return_value=False)
-        mock_cls.return_value = instance
+    with patch("src.main._http_client") as mock_client:
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.is_closed = False
 
         resp = await client.get("/health")
 
@@ -37,12 +38,9 @@ async def test_health_check(client):
 @pytest.mark.asyncio
 async def test_health_check_degraded(client):
     """Health endpoint returns degraded when file-service is unreachable."""
-    with patch("src.main.httpx.AsyncClient") as mock_cls:
-        instance = AsyncMock()
-        instance.get = AsyncMock(side_effect=Exception("connection refused"))
-        instance.__aenter__ = AsyncMock(return_value=instance)
-        instance.__aexit__ = AsyncMock(return_value=False)
-        mock_cls.return_value = instance
+    with patch("src.main._http_client") as mock_client:
+        mock_client.get = AsyncMock(side_effect=Exception("connection refused"))
+        mock_client.is_closed = False
 
         resp = await client.get("/health")
 
@@ -70,27 +68,37 @@ async def test_root(client):
 @pytest.mark.asyncio
 async def test_preview_requires_auth(client):
     """Preview endpoint returns 401 without Authorization header."""
-    resp = await client.get("/api/preview/some-file-id")
+    resp = await client.get(f"/api/preview/{_TEST_FILE_ID}")
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 @pytest.mark.asyncio
 async def test_thumbnail_requires_auth(client):
     """501 stubs also require auth."""
-    resp = await client.get("/api/preview/some-file-id/thumbnail")
+    resp = await client.get(f"/api/preview/{_TEST_FILE_ID}/thumbnail")
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 @pytest.mark.asyncio
 async def test_generate_requires_auth(client):
-    resp = await client.post("/api/preview/some-file-id/generate")
+    resp = await client.post(f"/api/preview/{_TEST_FILE_ID}/generate")
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 @pytest.mark.asyncio
 async def test_delete_requires_auth(client):
-    resp = await client.delete("/api/preview/some-file-id")
+    resp = await client.delete(f"/api/preview/{_TEST_FILE_ID}")
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+async def test_invalid_file_id_returns_400(client):
+    """Non-UUID file_id is rejected with 400."""
+    resp = await client.get(
+        "/api/preview/not-a-uuid",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
 
 # ── Mock helpers ─────────────────────────────────────────────────
@@ -123,7 +131,7 @@ async def test_preview_plain_text(client):
     text = b"Hello, world!"
     with _patch_fetch(text, "text/plain"):
         resp = await client.get(
-            "/api/preview/test-id",
+            f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
         )
 
@@ -139,7 +147,7 @@ async def test_preview_csv(client):
     csv_content = b"name,age\nAlice,30\nBob,25"
     with _patch_fetch(csv_content, "text/csv"):
         resp = await client.get(
-            "/api/preview/test-id",
+            f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
         )
 
@@ -152,7 +160,7 @@ async def test_preview_json_pretty_printed(client):
     raw = json.dumps({"key": "value", "nested": {"a": 1}}).encode()
     with _patch_fetch(raw, "application/json"):
         resp = await client.get(
-            "/api/preview/test-id",
+            f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
         )
 
@@ -181,7 +189,7 @@ async def test_preview_docx(client):
     docx_bytes = _make_docx_bytes("Test paragraph content")
     with _patch_fetch(docx_bytes, DOCX_MIME_TYPE):
         resp = await client.get(
-            "/api/preview/test-id",
+            f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
         )
 
@@ -217,7 +225,7 @@ async def test_preview_xlsx(client):
     xlsx_bytes = _make_xlsx_bytes()
     with _patch_fetch(xlsx_bytes, XLSX_MIME_TYPE):
         resp = await client.get(
-            "/api/preview/test-id",
+            f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
         )
 
@@ -234,7 +242,7 @@ async def test_preview_xlsx(client):
 async def test_preview_unsupported_type(client):
     with _patch_fetch(b"binary data", "application/octet-stream"):
         resp = await client.get(
-            "/api/preview/test-id",
+            f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
         )
 
@@ -249,7 +257,7 @@ async def test_preview_text_truncation(client):
     large_text = ("A" * 50000).encode()
     with _patch_fetch(large_text, "text/plain"):
         resp = await client.get(
-            "/api/preview/test-id",
+            f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
         )
 
@@ -272,7 +280,7 @@ async def test_preview_file_not_found(client):
             status_code=404, detail="File not found"
         )
         resp = await client.get(
-            "/api/preview/test-id",
+            f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
         )
 
@@ -289,7 +297,7 @@ async def test_preview_file_forbidden(client):
             status_code=403, detail="Access denied"
         )
         resp = await client.get(
-            "/api/preview/test-id",
+            f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
         )
 
@@ -307,23 +315,24 @@ async def test_preview_forwards_api_key(client):
         mock_settings.service_api_key = "test-secret-key"
         mock_settings.preview_max_size = 10485760
 
-        with patch("src.main.httpx.AsyncClient") as mock_cls:
+        with patch("src.main._http_client") as mock_client:
             mock_resp = MagicMock()
             mock_resp.status_code = 200
-            mock_resp.content = b"hello"
             mock_resp.headers = {"content-type": "text/plain"}
 
-            instance = AsyncMock()
-            instance.get = AsyncMock(return_value=mock_resp)
-            instance.__aenter__ = AsyncMock(return_value=instance)
-            instance.__aexit__ = AsyncMock(return_value=False)
-            mock_cls.return_value = instance
+            # Mock streaming response
+            async def aiter_bytes(chunk_size):
+                yield b"hello"
+            mock_resp.aiter_bytes = aiter_bytes
+
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_client.is_closed = False
 
             await client.get(
-                "/api/preview/test-id",
+                f"/api/preview/{_TEST_FILE_ID}",
                 headers={"Authorization": "Bearer test-token"},
             )
 
             # Verify X-API-Key was sent
-            call_args = instance.get.call_args
+            call_args = mock_client.get.call_args
             assert call_args[1]["headers"]["X-API-Key"] == "test-secret-key"
