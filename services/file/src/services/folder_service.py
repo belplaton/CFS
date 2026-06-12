@@ -95,6 +95,18 @@ class FolderService:
         if parent_id is not None:
             await self.get_folder(parent_id, user_id)
 
+        existing_names = await FolderRepository.list_existing_names_in_parent(
+            self.db, user_id, parent_id
+        )
+        existing_names |= await FileRepository.list_existing_names_in_folder(
+            self.db, user_id, parent_id
+        )
+        if name in existing_names:
+            raise FileNameConflict(
+                f"A folder named '{name}' already exists here",
+                extra={"name": name},
+            )
+
         folder = Folder(
             user_id=user_id,
             parent_id=parent_id,
@@ -118,6 +130,9 @@ class FolderService:
         new_name = sanitize_filename(raw_name)
         # Check for name conflict in the same parent.
         existing_names = await FolderRepository.list_existing_names_in_parent(
+            self.db, user_id, folder.parent_id
+        )
+        existing_names |= await FileRepository.list_existing_names_in_folder(
             self.db, user_id, folder.parent_id
         )
         if new_name in existing_names and new_name != folder.name:

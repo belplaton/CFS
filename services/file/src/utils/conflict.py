@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.exceptions import FileNameConflict
 from src.repositories.file import FileRepository
+from src.repositories.folder import FolderRepository
 
 
 # ``report.pdf`` → ``report (N).pdf`` — keep the extension, inject the
@@ -69,6 +70,9 @@ async def find_available_name(
     thousands of ``report (1).pdf`` ... ``report (1000).pdf``.
     """
     existing = await FileRepository.list_existing_names_in_folder(
+        db, user_id, folder_id
+    )
+    existing |= await FolderRepository.list_existing_names_in_parent(
         db, user_id, folder_id
     )
     if desired not in existing:

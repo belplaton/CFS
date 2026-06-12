@@ -162,23 +162,20 @@ class FileService:
         if on_conflict == "rename":
             filename = await find_available_name(self.db, user_id, folder_id, filename)
         else:
-            # Pre-compute a suggestion so the 409 body is useful even
-            # if the DB lookup itself fails.  The find_available_name
-            # call below re-checks against the live set.
             from src.exceptions import FileNameConflict
 
-            suggestion = suggest_rename(filename)
-            try:
-                filename = await find_available_name(
-                    self.db, user_id, folder_id, filename
-                )
-            except FileNameConflict as exc:
-                # Re-raise with the pre-computed hint.
+            existing = await FileRepository.list_existing_names_in_folder(
+                self.db, user_id, folder_id
+            )
+            existing |= await FolderRepository.list_existing_names_in_parent(
+                self.db, user_id, folder_id
+            )
+            if filename in existing:
                 raise FileNameConflict(
-                    str(exc),
-                    suggested_name=suggestion,
+                    f"A file named '{filename}' already exists in this folder",
+                    suggested_name=suggest_rename(filename),
                     extra={"name": filename},
-                ) from exc
+                )
 
         # 6. Quota reservation — acquires per-user advisory lock
         await quota_service.reserve_quota(self.db, user_id, size)
@@ -378,6 +375,9 @@ class FileService:
         validate_extension(new_name)
         # Check for name conflict in the same folder.
         existing_names = await FileRepository.list_existing_names_in_folder(
+            self.db, user_id, file.folder_id
+        )
+        existing_names |= await FolderRepository.list_existing_names_in_parent(
             self.db, user_id, file.folder_id
         )
         if new_name in existing_names and new_name != file.name:
