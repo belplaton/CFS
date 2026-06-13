@@ -5,7 +5,13 @@ import client from '@/api/client'
 import { useFileStore } from '@/store/file-store'
 
 function derivePlan(storageQuota = 0) {
-  return storageQuota > 5 * 1024 * 1024 * 1024 ? 'Pro' : 'Free'
+  if (storageQuota >= 500 * 1024 * 1024 * 1024) {
+    return 'Team'
+  }
+  if (storageQuota > 5 * 1024 * 1024 * 1024) {
+    return 'Pro'
+  }
+  return 'Free'
 }
 
 function normalizeUser(user) {
@@ -27,6 +33,7 @@ const initialState = {
   user: null,
   accessToken: null,
   refreshToken: null,
+  hasHydrated: false,
   isLoading: false,
   error: null,
 }
@@ -50,6 +57,7 @@ export const useAuthStore = create(
             accessToken: access_token,
             refreshToken: refresh_token,
             isAuthenticated: true,
+            hasHydrated: true,
           })
 
           await get().refreshProfile()
@@ -80,6 +88,7 @@ export const useAuthStore = create(
             accessToken: access_token,
             refreshToken: refresh_token,
             isAuthenticated: true,
+            hasHydrated: true,
           })
 
           await get().refreshProfile()
@@ -108,7 +117,12 @@ export const useAuthStore = create(
           set({ user, isAuthenticated: true, error: null })
           return user
         } catch (error) {
-          set({ error: error.response?.data?.detail || 'Session expired' })
+          useFileStore.getState().resetData()
+          set({
+            ...initialState,
+            hasHydrated: true,
+            error: error.response?.data?.detail || 'Session expired',
+          })
           return null
         }
       },
@@ -120,6 +134,7 @@ export const useAuthStore = create(
           accessToken,
           refreshToken,
           isAuthenticated: Boolean(accessToken),
+          hasHydrated: true,
         })
       },
 
@@ -135,6 +150,27 @@ export const useAuthStore = create(
         } catch (error) {
           const message = error.response?.data?.detail || 'Unable to start email verification'
           set({ error: message })
+          return { success: false, error: message }
+        }
+      },
+
+      switchPlan: async (plan) => {
+        set({ isLoading: true, error: null })
+        try {
+          const response = await client.post('/auth/plan', { plan })
+          const user = normalizeUser(response.data)
+          useFileStore.setState({
+            quota: {
+              used: user.usedBytes ?? 0,
+              total: user.quotaBytes ?? 0,
+              percent: Math.round(((user.usedBytes ?? 0) / Math.max(user.quotaBytes ?? 1, 1)) * 1000) / 10,
+            },
+          })
+          set({ user, isAuthenticated: true, isLoading: false, error: null })
+          return { success: true, user }
+        } catch (error) {
+          const message = error.response?.data?.detail || 'Unable to change plan'
+          set({ isLoading: false, error: message })
           return { success: false, error: message }
         }
       },
@@ -181,12 +217,12 @@ export const useAuthStore = create(
           }
         }
         useFileStore.getState().resetData()
-        set({ ...initialState })
+        set({ ...initialState, hasHydrated: true })
       },
 
       resetAuthState: () => {
         useFileStore.getState().resetData()
-        set({ ...initialState })
+        set({ ...initialState, hasHydrated: true })
       },
     }),
     {
@@ -202,9 +238,7 @@ export const useAuthStore = create(
           accessToken: state.accessToken,
           refreshToken: state.refreshToken,
         })
-        if (state?.accessToken && !state?.user) {
-          void state.refreshProfile()
-        }
+        useAuthStore.setState({ hasHydrated: true })
       },
     },
   ),

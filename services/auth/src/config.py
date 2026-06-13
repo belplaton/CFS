@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     # ==================== Storage quotas (bytes) ====================
     default_storage_quota: int = 5 * 1024 * 1024 * 1024        # 5 GB
     premium_storage_quota: int = 100 * 1024 * 1024 * 1024      # 100 GB
+    team_storage_quota: int = 500 * 1024 * 1024 * 1024         # 500 GB
 
     # ==================== Email (SMTP) ====================
     smtp_host: Optional[str] = None
@@ -57,6 +58,7 @@ class Settings(BaseSettings):
 
     # ==================== Frontend ====================
     frontend_url: str = "http://localhost:8080"
+    file_service_url: str = "http://file:8000"
 
     # ==================== CORS ====================
     cors_origins: str = "http://localhost:8080"

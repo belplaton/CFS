@@ -11,11 +11,13 @@ from datetime import datetime, timedelta, timezone
 import secrets
 from uuid import UUID
 
+import httpx
+
 from src.config import settings
 from src.exceptions import (
-    AuthenticationError,
     UserAlreadyExistsError,
     UserNotFoundError,
+    ValidationError,
 )
 from src.models.token import VerificationToken
 from src.models.user import User
@@ -109,6 +111,38 @@ class UserService:
     async def verify_user_email(self, user: User) -> None:
         user.is_verified = True
         await self.db.flush()
+
+    async def update_user_plan(self, user: User, plan: str) -> User:
+        normalized_plan = plan.lower().strip()
+        plan_quotas = {
+            "free": settings.default_storage_quota,
+            "pro": settings.premium_storage_quota,
+            "team": settings.team_storage_quota,
+        }
+
+        if normalized_plan not in plan_quotas:
+            raise ValidationError("Unsupported plan")
+
+        new_quota = plan_quotas[normalized_plan]
+        if user.used_storage > new_quota:
+            raise ValidationError("Current usage exceeds selected plan quota")
+
+        user.storage_quota = new_quota
+        await self.db.flush()
+        await self._invalidate_file_service_quota_cache(user.id)
+        return user
+
+    async def _invalidate_file_service_quota_cache(self, user_id: UUID) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.delete(
+                    f"{settings.file_service_url.rstrip('/')}/api/internal/quota-cache/{user_id}",
+                    headers={"X-API-Key": settings.service_api_key},
+                )
+        except Exception:
+            # Plan switch should still succeed even if file-service cache
+            # invalidation misses; frontend updates local quota immediately.
+            return
 
     async def create_verification_token(
         self,

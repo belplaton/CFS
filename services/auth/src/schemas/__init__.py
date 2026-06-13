@@ -13,6 +13,7 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from typing_extensions import Literal
 
 
 # ==================== Auth Schemas ====================
@@ -117,3 +118,9 @@ class LogoutRequest(BaseModel):
     """Logout request."""
 
     refresh_token: str
+
+
+class PlanUpdateRequest(BaseModel):
+    """Manual storage-plan switch without payment integration."""
+
+    plan: Literal["free", "pro", "team"]

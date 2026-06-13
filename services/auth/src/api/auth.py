@@ -17,6 +17,7 @@ from src.models.user import User
 from src.schemas import (
     UserCreate, UserLogin, Token, UserResponse,
     ForgotPasswordRequest, ResetPasswordRequest, ActionLinkResponse, LogoutRequest,
+    PlanUpdateRequest,
 )
 from src.services.user_service import UserService
 from src.utils.dependencies import get_current_user, security
@@ -96,6 +97,19 @@ async def get_me(current_user: User = Depends(get_current_user)):
     Requires Bearer token in Authorization header
     """
     return current_user
+
+
+@router.post("/plan", response_model=UserResponse)
+async def update_plan(
+    payload: PlanUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Manual storage-plan switch for MVP/dev mode.
+    """
+    user_service = UserService(db)
+    return await user_service.update_user_plan(current_user, payload.plan)
 
 
 @router.post("/refresh", response_model=Token)

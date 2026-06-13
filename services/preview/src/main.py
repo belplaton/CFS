@@ -15,7 +15,6 @@ import uuid
 
 import httpx
 import structlog
-from defusedxml import defuse_stdlib
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from docx import Document
@@ -71,11 +70,11 @@ def _check_rate_limit(user_key: str) -> None:
 # ── DOCX XXE protection ──────────────────────────────────────────
 
 def _secure_docx_parser(content: bytes) -> Document:
-    """Parse DOCX with XXE / entity expansion protection.
+    """Parse DOCX after basic container validation.
 
-    python-docx uses lxml internally. We validate the input is a valid
-    zip (DOCX is a zip archive) and use defusedxml to monkeypatch the
-    stdlib xml parser to block entity expansion attacks.
+    DOCX is a zip archive. We at least validate that envelope before
+    passing bytes into python-docx. This is format validation, not a
+    comprehensive XML-hardening guarantee for every parser underneath.
     """
     import zipfile
 
@@ -88,10 +87,6 @@ def _secure_docx_parser(content: bytes) -> Document:
             detail="Invalid DOCX file format",
         )
 
-    # defuse_stdlib patches xml.etree to block entity expansion.
-    # This protects python-docx's internal lxml-based parser as well,
-    # since the underlying XML parsing is hardened.
-    defuse_stdlib()
     return Document(BytesIO(content))
 
 

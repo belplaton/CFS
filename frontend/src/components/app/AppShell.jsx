@@ -21,6 +21,7 @@ function AppShell() {
   const navigate = useNavigate()
   const logout = useAuthStore((state) => state.logout)
   const accessToken = useAuthStore((state) => state.accessToken)
+  const hasHydrated = useAuthStore((state) => state.hasHydrated)
   const refreshProfile = useAuthStore((state) => state.refreshProfile)
   const user = useAuthStore((state) => state.user)
   const bootstrap = useFileStore((state) => state.bootstrap)
@@ -36,7 +37,7 @@ function AppShell() {
   const authError = useAuthStore((state) => state.error)
 
   useEffect(() => {
-    if (!accessToken) {
+    if (!hasHydrated || !accessToken) {
       return
     }
 
@@ -44,7 +45,7 @@ function AppShell() {
       await refreshProfile()
       await bootstrap()
     })()
-  }, [accessToken, bootstrap, refreshProfile])
+  }, [accessToken, bootstrap, hasHydrated, refreshProfile])
 
   if (accessToken && !user) {
     if (authError) {

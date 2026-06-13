@@ -39,6 +39,8 @@ const plans = [
 function BillingPage() {
   const { t } = useI18n()
   const user = useAuthStore((state) => state.user)
+  const switchPlan = useAuthStore((state) => state.switchPlan)
+  const isLoading = useAuthStore((state) => state.isLoading)
   const quota = useFileStore((state) => state.quota)
   const refreshQuota = useFileStore((state) => state.refreshQuota)
   const usedBytes = quota.used
@@ -111,9 +113,12 @@ function BillingPage() {
                 <Button
                   className="w-full"
                   variant={isCurrent || isDowngradeBlocked ? 'outline' : 'default'}
-                  disabled
+                  disabled={isCurrent || isDowngradeBlocked || isLoading}
+                  onClick={async () => {
+                    await switchPlan(plan.id)
+                  }}
                 >
-                  {isCurrent ? t('billing.currentPlan') : t('billing.choosePlan')}
+                  {isCurrent ? t('billing.currentPlan') : isLoading ? t('common.loading') : t('billing.choosePlan')}
                 </Button>
               </div>
             </article>
