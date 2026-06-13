@@ -19,6 +19,7 @@ from src.config import settings
 from src.exceptions import FileNotFound
 from src.repositories.file import FileRepository
 from src.repositories.folder import FolderRepository
+from src.schemas import TrashItemResponse
 from src.services import audit_service
 from src.services.file_service import FileService
 from src.services.folder_service import FolderService
@@ -33,33 +34,33 @@ class TrashService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def list_trash(self, user_id: UUID) -> list[dict]:
+    async def list_trash(self, user_id: UUID) -> list[TrashItemResponse]:
         files = await FileRepository.list_trashed(self.db, user_id)
         folders = await FolderRepository.list_trashed(self.db, user_id)
 
-        items: list[dict] = []
+        items: list[TrashItemResponse] = []
         for f in folders:
             items.append(
-                {
-                    "id": f.id,
-                    "kind": "folder",
-                    "name": f.name,
-                    "size": 0,
-                    "original_parent_id": f.parent_id,
-                    "deleted_at": f.deleted_at,
-                }
+                TrashItemResponse(
+                    id=f.id,
+                    kind="folder",
+                    name=f.name,
+                    size=0,
+                    original_parent_id=f.parent_id,
+                    deleted_at=f.deleted_at,
+                )
             )
         for f in files:
             items.append(
-                {
-                    "id": f.id,
-                    "kind": "file",
-                    "name": f.name,
-                    "size": f.size,
-                    "mime_type": f.mime_type,
-                    "original_parent_id": f.folder_id,
-                    "deleted_at": f.deleted_at,
-                }
+                TrashItemResponse(
+                    id=f.id,
+                    kind="file",
+                    name=f.name,
+                    size=f.size,
+                    mime_type=f.mime_type,
+                    original_parent_id=f.folder_id,
+                    deleted_at=f.deleted_at,
+                )
             )
         return items
 

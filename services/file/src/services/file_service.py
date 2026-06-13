@@ -10,6 +10,7 @@ and audit logging.
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
 from uuid import UUID
 
 from sqlalchemy import func
@@ -162,8 +163,6 @@ class FileService:
         if on_conflict == "rename":
             filename = await find_available_name(self.db, user_id, folder_id, filename)
         else:
-            from src.exceptions import FileNameConflict
-
             existing = await FileRepository.list_existing_names_in_folder(
                 self.db, user_id, folder_id
             )
@@ -427,7 +426,9 @@ class FileService:
 
     # ==================== Streamed download ====================
 
-    async def stream_file(self, file_id: UUID, user_id: UUID):
+    async def stream_file(
+        self, file_id: UUID, user_id: UUID
+    ) -> tuple[Generator[bytes, None, None], File]:
         """Yield chunks of the file body for ``StreamingResponse``."""
         file = await self.get_file(file_id, user_id)
         return minio_client.get_stream(
@@ -473,8 +474,6 @@ class FileService:
         the caller-supplied transaction; outer ``get_db`` commits at
         the end.
         """
-        from src.exceptions import FileNotFound
-
         errors: dict[str, str] = {}
         succeeded = 0
         for fid in ids:

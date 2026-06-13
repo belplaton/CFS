@@ -31,10 +31,11 @@ class UserRepository:
     async def get_by_email(
         db: AsyncSession, email: str
     ) -> Optional[User]:
-        """Case-insensitive email lookup — caller is responsible for
-        lower-casing the value first so the index can be used."""
+        """Case-insensitive email lookup — caller must pass a
+        already-normalized (lowered, stripped) email so the index
+        can be used."""
         result = await db.execute(
-            select(User).where(User.email == email.lower().strip())
+            select(User).where(User.email == email)
         )
         return result.scalar_one_or_none()
 

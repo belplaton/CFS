@@ -45,14 +45,14 @@ def _fingerprint(body: bytes) -> str:
     return hashlib.sha256(body or b"").hexdigest()
 
 
-async def _cache_key(user_id: UUID, idempotency_key: str) -> str:
+def _cache_key(user_id: UUID, idempotency_key: str) -> str:
     return f"idemp:{user_id}:{idempotency_key}"
 
 
 async def get_cached(
     redis: aioredis.Redis, user_id: UUID, idempotency_key: str
 ) -> Optional[dict[str, Any]]:
-    raw = await redis.get(await _cache_key(user_id, idempotency_key))
+    raw = await redis.get(_cache_key(user_id, idempotency_key))
     if raw is None:
         return None
     try:
@@ -76,7 +76,7 @@ async def set_cached(
         "fingerprint": body_fingerprint,
     }
     await redis.set(
-        await _cache_key(user_id, idempotency_key),
+        _cache_key(user_id, idempotency_key),
         json.dumps(payload),
         ex=_TTL_SECONDS,
     )

@@ -14,7 +14,12 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.exceptions import ConflictError, CycleDetected, FileNameConflict, FolderNotFound
+from src.exceptions import (
+    ConflictError,
+    CycleDetected,
+    FileNameConflict,
+    FolderNotFound,
+)
 from src.models.folder import Folder
 from src.repositories.file import FileRepository
 from src.repositories.folder import FolderRepository

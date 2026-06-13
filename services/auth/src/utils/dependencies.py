@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.exceptions import AuthenticationError, AuthorizationError
 from src.models import get_db
 from src.models.user import User
-from src.schemas import TokenData
+from src.repositories.user import UserRepository
 from src.utils.security import decode_token
 
 
@@ -62,13 +62,7 @@ async def get_current_user(
     except (ValueError, TypeError) as exc:
         raise AuthenticationError("Could not validate credentials") from exc
 
-    token_data = TokenData(user_id=user_id, email=payload.get("email"))
-
-    # Lazy import to avoid a circular dependency at module load time.
-    from src.services.user_service import UserService
-
-    user_service = UserService(db)
-    user = await user_service.get_user_by_id(token_data.user_id)
+    user = await UserRepository.get_by_id(db, user_id)
     if user is None:
         raise AuthenticationError("Could not validate credentials")
 

@@ -33,12 +33,6 @@ from src.repositories.file import FileRepository
 from src.repositories.folder import FolderRepository
 
 
-# ``report.pdf`` → ``report (N).pdf`` — keep the extension, inject the
-# disambiguator before the *last* dot.  Files without an extension just
-# get the suffix appended.
-_DOT = "."
-
-
 def _split_name(filename: str) -> tuple[str, str]:
     """Return (stem, ext) where ext includes the leading dot or is empty."""
     _, ext = os.path.splitext(filename)
