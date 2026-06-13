@@ -45,7 +45,12 @@ function TrashBrowser({ currentFolderId, items, onDelete, onGoToFolder, onRestor
   const { language, t } = useI18n()
   const foldersById = Object.fromEntries(items.filter((item) => item.kind === 'folder').map((item) => [item.id, item]))
   const breadcrumbs = buildBreadcrumbs(foldersById, currentFolderId, t)
-  const visibleItems = items.filter((item) => (item.parentId ?? ROOT_FOLDER_ID) === currentFolderId)
+  const visibleItems = items.filter((item) => {
+    const effectiveParent = (item.parentId && foldersById[item.parentId])
+      ? item.parentId
+      : ROOT_FOLDER_ID
+    return effectiveParent === currentFolderId
+  })
 
   return (
     <div className="space-y-3">
