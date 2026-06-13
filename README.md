@@ -9,17 +9,27 @@
 ### Текущий статус (июнь 2026)
 - ✅ Регистрация / авторизация (email + пароль)
 - ✅ Загрузка / скачивание / удаление файлов
-- ✅ Управление папками
-- ✅ Корзина (soft delete, restore, permanent delete)
-- ✅ Квоты и отображение usage в UI
-- ✅ Browser-native preview для image / PDF / text через authenticated download
-- ⚠️ Backend search endpoint есть, но frontend пока использует локальный фильтр по загруженному каталогу
-- ⚠️ Preview Service маршруты существуют, но generated previews ещё не включены
+- ✅ Управление папками (создание, переименование, перемещение, рекурсивное удаление)
+- ✅ Корзина (soft delete, restore, permanent delete, TTL cleanup 30 дней)
+- ✅ Квоты и отображение usage в UI (free / premium)
+- ✅ Поиск по имени файлов через backend
+- ✅ Конфликт имён при загрузке/создании/переименовании/перемещении (reject|rename)
+- ✅ Bulk операции (удаление, перемещение до 200 файлов)
+- ✅ Cursor-based пагинация
+- ✅ Browser-native preview для image / PDF (pdfjs-dist, первая страница)
+- ✅ Text preview для txt/csv/json/docx/xlsx через preview-service
+- ✅ Upload progress widget с очередью (макс. 5 параллельных)
+- ✅ Audit log + structured logging (structlog)
+- ✅ Rate limiting (Redis fixed-window)
+- ✅ Health check endpoints (DB, MinIO, Redis probes)
 - ⚠️ Billing UI показывает текущую квоту, но не меняет план на backend
 - ❌ Google OAuth
 - ❌ 2FA (TOTP)
-- ❌ Email verification flow
-- ❌ Reset-password confirmation flow
+- ❌ Email verification flow (backend готов, frontend не подключён)
+- ❌ Reset-password confirmation flow (backend готов, frontend не подключён)
+- ❌ Shared file links
+- ❌ Real-time sync (WebSocket)
+- ❌ CI pipeline, security tests, load testing (Phase 5, отложена)
 
 ## 🏗️ Архитектура
 
@@ -269,19 +279,19 @@ SMTP_PASSWORD=
 - **Axios** — HTTP клиент
 
 ### Frontend Design System
-- Визуальная основа frontend должна соответствовать подходу **shadcn/ui** из https://ui.shadcn.com
-- Для проекта принимается стиль **`new-york`** с **`baseColor: neutral`** и semantic CSS variables
+- Визуальная основа frontend соответствует подходу **shadcn/ui** из https://ui.shadcn.com
+- Для проекта принят стиль **`new-york`** с **`baseColor: neutral`** и semantic CSS variables
 - Предпочтительный визуальный язык: нейтральные фоны, читаемые карточные поверхности, заметные но аккуратные границы, спокойные тени и простая типографика без маркетингового перегруза
 - Основной UX-принцип: пользователь должен сразу видеть главный рабочий блок, вторичные панели и primary action; интерфейс не должен превращаться в текст на пустом полотне
 - Рабочие экраны строятся по card-based иерархии: page shell, section cards, nested cards, modal/dropdown overlays
 - Нельзя смешивать в одном интерфейсе несколько визуальных языков: Material-like surfaces, маркетинговые hero-блоки и shadcn patterns должны быть разведены по ролям или исключены
-- Во frontend доступны четыре режима оформления: `light`, `dark`, `midnight` и `system`; все они используют одну компонентную систему и общий UX-рисунок
 - При добавлении новых экранов и компонентов нужно опираться на существующие shadcn patterns, а не изобретать отдельный дизайн-язык
 - Конфигурация стиля фронтенда зафиксирована в `frontend/components.json`
 
 ### Frontend Reality Check
 - `Files` и `Trash` страницы ходят в реальные backend endpoints
-- Preview modal рендерит только типы, которые браузер умеет показать напрямую после authenticated download
+- Preview modal рендерит image/PDF через browser-native preview (authenticated download); text/csv/json/docx/xlsx через preview-service; остальные типы показывают "Preview unavailable"
+- Upload widget с очередью (макс. 5 параллельных), per-file progress, отмена, retry
 - `Security`, `Billing`, `Verify email`, `Reset password` остаются честными статус-экранами там, где backend flow ещё не готов
 
 ### Инфраструктура

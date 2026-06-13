@@ -55,8 +55,8 @@ services/file/
 |---|---|
 | Upload (Content-Length) | Stream по `stream_chunk_size`, abort при `> max_upload_size` |
 | Filename | `sanitize_filename` (NFKC, strip path, drop NUL, win-reserved) |
-| Extension | `validate_extension` against `settings.allowed_ext_set` |
-| MIME | `validate_mime_type` against `settings.allowed_mime_set` |
+| Extension | `validate_extension` against `settings.blocked_ext_set` (blacklist) |
+| MIME | `validate_mime_type` against `settings.blocked_mime_set` (blacklist) |
 | Quota | `pg_advisory_xact_lock(hashtextextended(uid))` + SUM + insert in one txn |
 | MinIO ↔ DB | Compensating `minio_client.remove` при сбое DB insert |
 | Soft delete | MinIO `copy_object` files/ → trash/ + DB `deleted_at` |
@@ -342,3 +342,33 @@ Phase 1 читает весь файл в память (`b"".join(chunks)`) — 
 - Security tests на bulk ops (rate limit, MAX_BULK_ITEMS enforcement).
 - `rate_limit(WRITE)` на PUT/PATCH (rename, move) — долг #8.
 - Auth logout + Redis revocation list — долг #7.
+
+---
+
+## 🛑 Сессия 2026-06-13 — Upload queue, PDF preview, duplicate name prevention, download fix
+
+**Выполнено за сессию:**
+
+1. **Upload progress widget** — `uploadQueue` state в file-store.js с per-file tracking (progress, status, error). Max 5 параллельных upload через `_processUpload` + `_drainQueue`. `AbortController` для отмены. `UploadProgress.jsx` — fixed bottom-right панель.
+
+2. **PDF preview** — `pdfjs-dist` добавлен в dependencies. `PdfFirstPage` компонент рендерит только страницу 1 через canvas. Worker загружается через Vite `?url` import.
+
+3. **Download 404 fix** — Caddy `@file_api` и `@preview_api`Matchers обновлены с `*/ *` (two-segment wildcards) для маршрутов `/{id}/download`, `/{id}/restore`, `/{id}/permanent`. Корневая причина: `path /api/files/*` матчит только один сегмент.
+
+4. **Duplicate name prevention** — `create_folder` теперь проверяет `FolderRepository.list_existing_names_in_parent` + `FileRepository.list_existing_names_in_folder` перед insert → 409. `rename_folder` и `rename_file` проверяют оба типа. `conflict.py:find_available_name` проверяет обе таблицы.
+
+5. **File move conflict** — `file_service.move_file` и `folder_service.move_folder` проверяют конфликты имён в целевой папке → 409 с `suggested_name`.
+
+6. **Upload policy change** — с whitelist на blacklist. Blocked: `exe, bat, cmd, sh, ps1, msi, com, scr, pif, vbs, js, wsf, cpl, hta, inf, reg, rgs, sct, shb, shs`. Previewable: `pdf, png, jpg, jpeg, gif, webp, txt, csv, json`.
+
+7. **FolderResponse.kind** — добавлено поле `kind: str = "folder"` в схему. Frontend `collectFolders` инжектит `kind: item.kind ?? 'folder'`.
+
+8. **Auth hydration fix** — `onRehydrateStorage` вызывает `refreshProfile()` когда `accessToken` есть но `user` null. AppShell показывает loading screen.
+
+9. **Error handling** — auth-store `login`/`register` теперь парсят массивы `detail` из 422 ответов в строку.
+
+**Smoke-test:** 15/15 PASS.
+
+**Что осталось:**
+- Browser testing upload queue, PDF preview, duplicate name prevention.
+- `test@test.test` отклоняется Pydantic EmailStr (зарезервированный TLD `.test`). Использовать реальные email для тестов.

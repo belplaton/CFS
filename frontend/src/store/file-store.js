@@ -145,6 +145,13 @@ function canMoveItem(items, id, parentId) {
   return !descendantIds.includes(parentId)
 }
 
+const MAX_CONCURRENT_UPLOADS = 5
+
+let uploadIdCounter = 0
+function nextUploadId() {
+  return `upload-${++uploadIdCounter}-${Date.now()}`
+}
+
 const initialState = {
   items: [],
   allFolders: [],
@@ -164,6 +171,7 @@ const initialState = {
   error: null,
   fileError: null,
   trashError: null,
+  uploadQueue: [],
 }
 
 export const useFileStore = create(
@@ -314,28 +322,145 @@ export const useFileStore = create(
           return
         }
 
-        set({ isMutating: true, fileError: null })
-        try {
-          for (const file of files) {
-            const formData = new FormData()
-            formData.append('file', file)
-            const apiFolderId = toFolderParam(parentId)
-            await client.post('/files/upload', formData, {
-              params: { folder_id: apiFolderId ?? undefined },
-              headers: { 'Content-Type': 'multipart/form-data' },
-            })
-          }
-          await Promise.all([
-            get().refreshQuota(),
-            get().searchQuery.trim()
-              ? get().searchItems(get().searchQuery)
-              : get().loadFolder(get().currentFolderId),
-          ])
-        } catch (error) {
-          set({ fileError: error.response?.data?.detail || 'Unable to upload files' })
-        } finally {
-          set({ isMutating: false })
+        const apiFolderId = toFolderParam(parentId)
+        const newEntries = files.map((file) => ({
+          id: nextUploadId(),
+          name: file.name,
+          size: file.size,
+          progress: 0,
+          status: 'queued',
+          error: null,
+          _file: file,
+          _folderId: apiFolderId,
+          _abortController: null,
+        }))
+
+        set((state) => ({ uploadQueue: [...state.uploadQueue, ...newEntries] }))
+
+        for (const entry of newEntries) {
+          void get()._processUpload(entry.id)
         }
+      },
+
+      _processUpload: async (uploadId) => {
+        const state = get()
+        const entry = state.uploadQueue.find((e) => e.id === uploadId)
+        if (!entry || entry.status !== 'queued') {
+          return
+        }
+
+        const activeCount = state.uploadQueue.filter((e) => e.status === 'uploading').length
+        if (activeCount >= MAX_CONCURRENT_UPLOADS) {
+          return
+        }
+
+        set((s) => ({
+          uploadQueue: s.uploadQueue.map((e) =>
+            e.id === uploadId ? { ...e, status: 'uploading' } : e,
+          ),
+        }))
+
+        const abortController = new AbortController()
+        set((s) => ({
+          uploadQueue: s.uploadQueue.map((e) =>
+            e.id === uploadId ? { ...e, _abortController: abortController } : e,
+          ),
+        }))
+
+        const formData = new FormData()
+        formData.append('file', entry._file)
+
+        try {
+          await client.post('/files/upload', formData, {
+            params: { folder_id: entry._folderId ?? undefined },
+            headers: { 'Content-Type': 'multipart/form-data' },
+            signal: abortController.signal,
+            onUploadProgress: (progressEvent) => {
+              const percent = progressEvent.total
+                ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
+                : 0
+              set((s) => ({
+                uploadQueue: s.uploadQueue.map((e) =>
+                  e.id === uploadId ? { ...e, progress: percent } : e,
+                ),
+              }))
+            },
+          })
+
+          set((s) => ({
+            uploadQueue: s.uploadQueue.map((e) =>
+              e.id === uploadId ? { ...e, status: 'done', progress: 100 } : e,
+            ),
+          }))
+        } catch (error) {
+          if (error.name === 'CanceledError' || error.name === 'AbortError') {
+            set((s) => ({
+              uploadQueue: s.uploadQueue.filter((e) => e.id !== uploadId),
+            }))
+          } else {
+            set((s) => ({
+              uploadQueue: s.uploadQueue.map((e) =>
+                e.id === uploadId
+                  ? { ...e, status: 'error', error: error.response?.data?.detail || error.message || 'Upload failed' }
+                  : e,
+              ),
+            }))
+          }
+        } finally {
+          set((s) => {
+            const nextQueue = s.uploadQueue.map((e) =>
+              e.id === uploadId ? { ...e, _abortController: null } : e,
+            )
+            return { uploadQueue: nextQueue }
+          })
+
+          get()._drainQueue()
+
+          const queue = get().uploadQueue
+          if (queue.every((e) => e.status === 'done' || e.status === 'error')) {
+            await Promise.all([
+              get().refreshQuota(),
+              get().searchQuery.trim()
+                ? get().searchItems(get().searchQuery)
+                : get().loadFolder(get().currentFolderId),
+            ])
+          }
+        }
+      },
+
+      _drainQueue: () => {
+        const state = get()
+        const activeCount = state.uploadQueue.filter((e) => e.status === 'uploading').length
+        const pending = state.uploadQueue.filter((e) => e.status === 'queued')
+
+        for (const entry of pending) {
+          if (activeCount >= MAX_CONCURRENT_UPLOADS) {
+            break
+          }
+          void get()._processUpload(entry.id)
+        }
+      },
+
+      cancelUpload: (uploadId) => {
+        const entry = get().uploadQueue.find((e) => e.id === uploadId)
+        if (entry?._abortController) {
+          entry._abortController.abort()
+        }
+      },
+
+      retryUpload: (uploadId) => {
+        set((s) => ({
+          uploadQueue: s.uploadQueue.map((e) =>
+            e.id === uploadId ? { ...e, status: 'queued', progress: 0, error: null } : e,
+          ),
+        }))
+        void get()._processUpload(uploadId)
+      },
+
+      removeCompletedUploads: () => {
+        set((s) => ({
+          uploadQueue: s.uploadQueue.filter((e) => e.status !== 'done' && e.status !== 'error'),
+        }))
       },
 
       renameItem: async ({ id, kind, name }) => {

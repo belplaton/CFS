@@ -22,9 +22,9 @@
 
 ### Текущий статус реализации (июнь 2026)
 
-- **Готово и используется в UI:** email/password auth, file CRUD, folders, trash, quota, direct download, browser-native preview для image/PDF/text.
-- **Готово на backend, но частично не выведено в UI:** отдельные search/trash/folder endpoints, health probes.
-- **Честно не готово:** Google OAuth, TOTP, email verification flow, reset-password confirmation flow, generated previews в отдельном preview-service.
+- **Готово и используется в UI:** email/password auth, file CRUD, folders, trash (recursive + TTL cleanup), quota (free/premium), search, conflict detection (reject|rename), bulk ops, cursor pagination, browser-native preview (image/PDF via pdfjs-dist), text preview (txt/csv/json/docx/xlsx via preview-service), upload progress widget (queue max 5 concurrent), audit logging, structured logging, rate limiting, health checks.
+- **Готово на backend, но частично не выведено в UI:** email verification flow (backend в dev mode возвращает action_url/token), reset-password flow (backend готов), Google OAuth (не реализован), 2FA/TOTP (не реализован).
+- **Честно не готово:** Google OAuth, TOTP, shared file links, real-time sync, CI pipeline, security/load testing.
 - **Источник истины по текущему состоянию:** `README.md` + `AGENTS.md`. ROADMAP ниже остаётся как исторический план, а не как факт готовности.
 
 ---
@@ -35,14 +35,21 @@
 - ✅ Регистрация / авторизация (email + пароль)
 - ⚠️ Вход через Google (OAuth2) — не реализован
 - ⚠️ Двухфакторная аутентификация (TOTP) — не реализована
-- ⚠️ Верификация email — маршрут есть, backend flow не завершён
-- ⚠️ Восстановление пароля — только запрос, подтверждение не завершено
-- ✅ Загрузка / скачивание / удаление файлов
-- ✅ Управление папками (создание, переименование, перемещение)
-- ⚠️ Предпросмотр файлов — direct browser preview есть; generated previews через preview-service не включены
-- ⚠️ Поиск по имени файла — backend endpoint есть, frontend wiring минимален
-- ✅ Корзина (30 дней, с возможностью безвозвратного удаления)
+- ✅ Верификация email — backend готов (dev mode: action_url/token), frontend не подключён
+- ✅ Восстановление пароля — backend готов (dev mode: action_url/token), frontend не подключён
+- ✅ Загрузка / скачивание / удаление файлов (чёрный список расширений)
+- ✅ Управление папками (создание, переименование, перемещение, рекурсивное удаление BFS)
+- ✅ Предпросмотр файлов — browser-native для image/PDF (pdfjs-dist), text preview через preview-service
+- ✅ Поиск по имени файла (ILIKE)
+- ✅ Корзина (30 дней TTL, recursive delete, restore, permanent delete)
 - ✅ Квоты: 5 ГБ (бесплатно), 100 ГБ (подписка)
+- ✅ Конфликт имён (reject|rename, duplicate prevention across files AND folders)
+- ✅ Bulk операции (delete/move до 200 файлов, per-id error reporting)
+- ✅ Cursor-based пагинация
+- ✅ Upload progress widget (очередь, max 5 параллельных, отмена, retry)
+- ✅ Audit logging + structured logging (structlog)
+- ✅ Rate limiting (Redis fixed-window, fail-open)
+- ✅ Health check endpoints (DB, MinIO, Redis probes)
 
 ### Отложено (после MVP)
 - ❌ Шаринг файлов по ссылке
@@ -50,6 +57,7 @@
 - ❌ Версионность файлов
 - ❌ Синхронизация в реальном времени (WebSocket)
 - ❌ Управление сессиями/устройствами
+- ❌ CI pipeline, security tests, load testing, OpenAPI examples
 
 ---
 

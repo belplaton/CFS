@@ -662,8 +662,8 @@ RequestIDMiddleware        (внешний — генерирует X-Request-ID
 
 ВСЕГДА перед записью:
 - `sanitize_filename` — NFKC нормализация, strip path, NUL/control-chars, Windows reserved, length cap
-- `validate_extension` — against `settings.allowed_ext_set`
-- `validate_mime_type` — against `settings.allowed_mime_set`
+- `validate_extension` — against `settings.blocked_ext_set` (blacklist: exe, bat, cmd, sh, ps1, msi, com, scr, pif, vbs, js, wsf, cpl, hta, inf, reg, rgs, sct, shb, shs)
+- `validate_mime_type` — against `settings.blocked_mime_set` (blacklist: x-msdownload, x-bat, x-cmd, x-sh, x-shellscript, x-executable, x-mach-binary, x-elf)
 
 ### Безопасность
 
@@ -672,6 +672,7 @@ RequestIDMiddleware        (внешний — генерирует X-Request-ID
 - НИКОГДА не подставлять `user_id` из request body — только из JWT
 - ВСЕГДА проверять `deleted_at IS NULL` в read-запросах
 - ВСЕГДА тестировать cross-tenant (IDOR) сценарии
+- ВСЕГДА проверять `minio_object_id` на принадлежность `user_id` перед операциями
 
 ### Именование
 
@@ -682,9 +683,13 @@ RequestIDMiddleware        (внешний — генерирует X-Request-ID
 
 ### Whitelist
 
-**MIME:** `image/jpeg, image/png, image/gif, image/webp, image/svg+xml, application/pdf, text/plain, text/csv, application/json, application/msword, application/vnd.openxmlformats-officedocument.*, application/vnd.ms-excel, application/vnd.ms-powerpoint, application/zip, application/x-tar, application/gzip`
+**Blocked extensions:** `exe, bat, cmd, sh, ps1, msi, com, scr, pif, vbs, js, wsf, cpl, hta, inf, reg, rgs, sct, shb, shs`
 
-**Extensions:** `jpg, jpeg, png, gif, webp, svg, pdf, txt, csv, json, doc, docx, xls, xlsx, ppt, pptx, zip, tar, gz`
+**Blocked MIME types:** `application/x-msdownload, application/x-bat, application/x-cmd, application/x-sh, text/x-shellscript, application/x-executable, application/x-mach-binary, application/x-elf`
+
+**Previewable extensions:** `pdf, png, jpg, jpeg, gif, webp, txt, csv, json`
+
+**Upload policy:** Blacklist — everything allowed except blocked extensions/MIME types.
 
 ### Константы
 

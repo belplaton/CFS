@@ -264,6 +264,13 @@
     "description": "Drag and drop files here, or click to browse your computer.",
     "selectFiles": "Choose files"
   },
+  "uploadProgress": {
+    "uploading": "Uploading {count} file(s)...",
+    "queued": "{count} file(s) queued",
+    "complete": "Uploads complete",
+    "waiting": "Waiting...",
+    "clear": "Clear list"
+  },
   "trash": {
     "eyebrow": "Trash",
     "title": "Trash",

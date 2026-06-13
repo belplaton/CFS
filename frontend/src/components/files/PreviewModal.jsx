@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, FileSpreadsheet, FileText, FileType2, X } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 import client from '@/api/client'
 import { useI18n } from '@/components/app/I18nProvider'
 import { Button } from '@/components/ui/button'
 import { formatBytes, formatDate, getFileTypeLabel } from '@/lib/utils'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 
 function PdfFirstPage({ blob, t }) {
   const canvasRef = useRef(null)

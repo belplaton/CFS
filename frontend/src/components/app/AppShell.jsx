@@ -33,6 +33,8 @@ function AppShell() {
   const displayName = user?.full_name?.trim() || t('appShell.defaultUserName')
   const displayEmail = user?.email?.trim() || t('appShell.noEmail')
 
+  const authError = useAuthStore((state) => state.error)
+
   useEffect(() => {
     if (!accessToken) {
       return
@@ -43,6 +45,24 @@ function AppShell() {
       await bootstrap()
     })()
   }, [accessToken, bootstrap, refreshProfile])
+
+  if (accessToken && !user) {
+    if (authError) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+          <div className="text-center">
+            <p className="text-sm text-destructive">{authError}</p>
+            <p className="mt-2 text-xs text-muted-foreground">{t('common.loading')}</p>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="surface-grid min-h-screen bg-background text-foreground">

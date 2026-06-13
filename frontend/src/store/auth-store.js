@@ -56,7 +56,12 @@ export const useAuthStore = create(
           set({ isLoading: false })
           return { success: true }
         } catch (error) {
-          const message = error.response?.data?.detail || 'Registration failed'
+          const detail = error.response?.data?.detail
+          const message = typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d) => d.msg || d.message || String(d)).join('; ')
+              : 'Registration failed'
           set({ isLoading: false, error: message })
           return { success: false, error: message }
         }
@@ -81,7 +86,12 @@ export const useAuthStore = create(
           set({ isLoading: false })
           return { success: true }
         } catch (error) {
-          const message = error.response?.data?.detail || 'Login failed'
+          const detail = error.response?.data?.detail
+          const message = typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d) => d.msg || d.message || String(d)).join('; ')
+              : 'Login failed'
           set({ isLoading: false, error: message })
           return { success: false, error: message }
         }
@@ -192,6 +202,9 @@ export const useAuthStore = create(
           accessToken: state.accessToken,
           refreshToken: state.refreshToken,
         })
+        if (state?.accessToken && !state?.user) {
+          void state.refreshProfile()
+        }
       },
     },
   ),

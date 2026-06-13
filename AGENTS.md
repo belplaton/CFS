@@ -12,6 +12,7 @@
 **Сервисы:** `auth` (8000, :5433), `file` (8000, :5434), `preview` (8000, :5435) — каждый со своей БД.
 **Хранилище:** Единый бакет `cloudstorage` с префиксами `{user_id}/files/`, `{user_id}/trash/`, `{user_id}/preview/`.
 **Контракты:** JWT (HS256, общий secret), `X-API-Key` для service-to-service.
+**Статус:** MVP готов. Phases 1–4 выполнены. Phase 5 (CI, security/load tests, OpenAPI examples) отложена.
 
 **Ключевые документы (в корне):**
 - `README.md` — быстрый старт
@@ -126,14 +127,23 @@ ruff format src tests
 
 ---
 
-## 📝 Whitelist (конфиг)
+## 📝 Upload Policy (file-service)
 
-**MIME:** `image/jpeg, image/png, image/gif, image/webp, image/svg+xml, application/pdf, text/plain, text/csv, application/json, application/msword, docx, xls, xlsx, ppt, pptx, zip, tar, gzip`
-**Extensions:** `jpg, jpeg, png, gif, webp, svg, pdf, txt, csv, json, doc, docx, xls, xlsx, ppt, pptx, zip, tar, gz`
+**Approach:** Blacklist (everything allowed except blocked).
+
+**Blocked extensions:** `exe, bat, cmd, sh, ps1, msi, com, scr, pif, vbs, js, wsf, cpl, hta, inf, reg, rgs, sct, shb, shs`
+**Blocked MIME types:** `application/x-msdownload, application/x-bat, application/x-cmd, application/x-sh, text/x-shellscript, application/x-executable, application/x-mach-binary, application/x-elf`
+**Previewable extensions:** `pdf, png, jpg, jpeg, gif, webp, txt, csv, json`
 **Upload limit:** 100 MB
 **Filename max:** 255 байт UTF-8
 **Presigned URL expires:** 15 минут
 **Folder max depth:** 1000 (защита от corrupted trees)
+
+**Conflict resolution:** `?on_conflict=reject|rename`. `rename` uses `find_available_name` with `(1)`, `(2)` suffixes.
+
+**Bulk operations:** `POST /api/files/bulk-delete`, `/bulk-move` — до 200 ids, per-id error reporting.
+
+**File move:** `POST /api/files/{id}/move` + `?on_conflict=reject|rename` — checks both files and folders in target.
 
 ---
 
@@ -166,3 +176,12 @@ ruff format src tests
 - 2026-06-11: `Trash` should be rendered hierarchically using `original_parent_id` / normalized `parentId`, not as one flat root list. Nested deleted files/folders must be browsable with breadcrumbs similar to normal file browsing.
 - 2026-06-12: `Content-Disposition` for file downloads must include a valid disposition type (`attachment; ...`). Bare `filename=...` is malformed and can surface in browsers as opaque download/preview network failures.
 - 2026-06-12: Plain-text file preview should use dedicated `file-service` JSON endpoint (`/api/files/{id}/text-preview`) rather than download streaming. This avoids browser/XHR transport edge cases on attachment/stream responses.
+- 2026-06-13: Duplicate name prevention — both `create_folder` and `rename_folder`/`rename_file` now check both files AND folders for name conflicts before insert/update. Backend returns 409 with `suggested_name`. Frontend `find_available_name` checks both file and folder tables.
+- 2026-06-13: File move endpoint `POST /api/files/{id}/move` now checks for name conflicts in target folder before moving. Returns 409 with `suggested_name` on conflict.
+- 2026-013: Upload policy changed from whitelist to blacklist approach. Blocked extensions: `exe, bat, cmd, sh, ps1, msi, com, scr, pif, vbs, js, wsf, cpl, hta, inf, reg, rgs, sct, shb, shs`. All other files uploadable.
+- 2026-06-13: PDF preview uses client-side `pdfjs-dist` library instead of server-side conversion. Worker loaded via Vite `?url` import. Renders only page 1 in modal for fast preview.
+- 2026-06-13: Upload progress widget implemented with queue system. Max 5 concurrent uploads per batch. Uses Zustand `uploadQueue` state with per-file tracking (progress, status, error). `AbortController` for cancellation.
+- 2026-06-13: Auth hydration fix — `onRehydrateStorage` in `auth-store.js` calls `refreshProfile()` when `accessToken` exists but `user` is null. AppShell shows loading screen during profile fetch.
+- 2026-06-13: Caddy `@file_api` and `@preview_api` matchers updated with `*/ *` (two-segment wildcards) to route `/{id}/download`, `/{id}/restore`, `/{id}/permanent` correctly. Root cause of download 404 bug.
+- 2026-06-13: `FolderResponse` schema now includes `kind: str = "folder"` field. Frontend `collectFolders` injects `kind: item.kind ?? 'folder'` so move dialog properly identifies folders.
+- 2026-06-13: Error handling in auth-store `login`/`register` improved — `detail` arrays from 422 responses are now properly joined into human-readable strings instead of showing `[object Object]`.

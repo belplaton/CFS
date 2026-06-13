@@ -15,6 +15,7 @@ import { useI18n } from '@/components/app/I18nProvider'
 import LanguageSwitcher from '@/components/app/LanguageSwitcher'
 import PreviewModal from '@/components/files/PreviewModal'
 import ThemeSwitcher from '@/components/app/ThemeSwitcher'
+import UploadProgress from '@/components/files/UploadProgress'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -367,7 +368,7 @@ function FilesPage() {
               <FolderPlus className="h-4 w-4" />
               {t('files.createFolderShort')}
             </Button>
-            <Button className="h-10 gap-2 px-4" disabled={isMutating} onClick={() => document.getElementById('file-upload-trigger')?.click()}>
+            <Button className="h-10 gap-2 px-4" onClick={() => document.getElementById('file-upload-trigger')?.click()}>
               <UploadCloud className="h-4 w-4" />
               {t('files.upload')}
             </Button>
@@ -543,6 +544,7 @@ function FilesPage() {
       ) : null}
 
       <PreviewModal item={previewItem} onClose={closePreview} onDownload={downloadItem} />
+      <UploadProgress />
     </div>
   )
 }
