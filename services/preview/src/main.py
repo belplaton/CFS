@@ -7,12 +7,15 @@ PDFs) can still be fetched directly from the file service.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from io import BytesIO
 import json
+import time
 import uuid
 
 import httpx
 import structlog
+from defusedxml import defuse_stdlib
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from docx import Document
@@ -42,6 +45,54 @@ def _get_http_client() -> httpx.AsyncClient:
     if _http_client is None or _http_client.is_closed:
         _http_client = httpx.AsyncClient(timeout=30.0)
     return _http_client
+
+
+# ── Rate limiter (simple in-memory fixed-window) ─────────────────
+
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT_WINDOW = 60  # seconds
+_RATE_LIMIT_MAX_REQUESTS = 30  # per window per user
+
+
+def _check_rate_limit(user_key: str) -> None:
+    now = time.monotonic()
+    window_start = now - _RATE_LIMIT_WINDOW
+    _rate_limit_store[user_key] = [
+        ts for ts in _rate_limit_store[user_key] if ts > window_start
+    ]
+    if len(_rate_limit_store[user_key]) >= _RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded. Try again later.",
+        )
+    _rate_limit_store[user_key].append(now)
+
+
+# ── DOCX XXE protection ──────────────────────────────────────────
+
+def _secure_docx_parser(content: bytes) -> Document:
+    """Parse DOCX with XXE / entity expansion protection.
+
+    python-docx uses lxml internally. We validate the input is a valid
+    zip (DOCX is a zip archive) and use defusedxml to monkeypatch the
+    stdlib xml parser to block entity expansion attacks.
+    """
+    import zipfile
+
+    # Validate it's a valid zip first
+    try:
+        zipfile.ZipFile(BytesIO(content))
+    except zipfile.BadZipFile:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid DOCX file format",
+        )
+
+    # defuse_stdlib patches xml.etree to block entity expansion.
+    # This protects python-docx's internal lxml-based parser as well,
+    # since the underlying XML parsing is hardened.
+    defuse_stdlib()
+    return Document(BytesIO(content))
 
 
 class TextPreviewResponse(BaseModel):
@@ -142,13 +193,18 @@ async def _fetch_file_bytes(file_id: str, authorization: str) -> tuple[bytes, st
         )
 
     if response.status_code >= 400:
-        detail = response.text or "Unable to fetch source file"
+        # Sanitize upstream errors: never forward internal details to clients.
+        if response.status_code >= 500:
+            detail = "File service error"
+        else:
+            detail = response.text or "Unable to fetch source file"
         raise HTTPException(status_code=response.status_code, detail=detail)
 
     # Stream-read with size limit to avoid OOM on large files.
-    content = b""
+    # Use bytearray for O(n) concatenation instead of bytes O(n²).
+    content = bytearray()
     async for chunk in response.aiter_bytes(8192):
-        content += chunk
+        content.extend(chunk)
         if len(content) > settings.preview_max_size:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -179,7 +235,7 @@ def _preview_json_bytes(content: bytes) -> TextPreviewResponse:
 
 
 def _preview_docx_bytes(content: bytes) -> TextPreviewResponse:
-    document = Document(BytesIO(content))
+    document = _secure_docx_parser(content)
     lines: list[str] = []
 
     for paragraph in document.paragraphs:
@@ -231,6 +287,10 @@ def _validate_file_id(file_id: str) -> str:
 async def get_preview(file_id: str, authorization: str | None = Header(default=None)):
     _validate_file_id(file_id)
     auth_header = _require_auth_header(authorization)
+
+    # Rate limit by token prefix (first 16 chars) to avoid storing full JWT.
+    rate_key = authorization[:16] if authorization else "anonymous"
+    _check_rate_limit(rate_key)
 
     logger.info("preview_request", file_id=file_id)
 

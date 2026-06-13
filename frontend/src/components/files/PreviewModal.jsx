@@ -1,12 +1,81 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, FileSpreadsheet, FileText, FileType2, X } from 'lucide-react'
+import * as pdfjsLib from 'pdfjs-dist'
 
 import client from '@/api/client'
 import { useI18n } from '@/components/app/I18nProvider'
 import { Button } from '@/components/ui/button'
 import { formatBytes, formatDate, getFileTypeLabel } from '@/lib/utils'
 
-function PreviewBody({ item, previewBlobUrl, previewError, previewText, previewState, t }) {
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+
+function PdfFirstPage({ blob, t }) {
+  const canvasRef = useRef(null)
+  const [renderError, setRenderError] = useState('')
+
+  useEffect(() => {
+    if (!blob || !canvasRef.current) {
+      return undefined
+    }
+
+    let isActive = true
+    let task = null
+
+    async function render() {
+      try {
+        const arrayBuffer = await blob.arrayBuffer()
+        if (!isActive) return
+
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+        if (!isActive) return
+
+        const page = await pdf.getPage(1)
+        if (!isActive) return
+
+        const scale = Math.min(1.5, (window.innerWidth - 120) / page.getViewport({ scale: 1 }).width)
+        const viewport = page.getViewport({ scale })
+        const canvas = canvasRef.current
+        if (!canvas) return
+
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+
+        const ctx = canvas.getContext('2d')
+        task = page.render({ canvasContext: ctx, viewport })
+        await task.promise
+      } catch (err) {
+        if (isActive && err?.name !== 'RenderingCancelledException') {
+          setRenderError(err.message || t('preview.errorFallback'))
+        }
+      }
+    }
+
+    void render()
+
+    return () => {
+      isActive = false
+      if (task) {
+        task.cancel()
+      }
+    }
+  }, [blob, t])
+
+  if (renderError) {
+    return (
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-8 text-sm text-foreground">
+        {renderError}
+      </div>
+    )
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card">
+      <canvas ref={canvasRef} className="w-full" style={{ display: 'block' }} />
+    </div>
+  )
+}
+
+function PreviewBody({ item, previewBlob, previewBlobUrl, previewError, previewText, previewState, t }) {
   if (previewState === 'loading') {
     return (
       <div className="rounded-xl border bg-card p-8 text-sm text-muted-foreground">
@@ -35,12 +104,8 @@ function PreviewBody({ item, previewBlobUrl, previewError, previewText, previewS
     )
   }
 
-  if (item.preview === 'pdf' && previewBlobUrl) {
-    return (
-      <div className="overflow-hidden rounded-xl border bg-card">
-        <iframe className="h-[520px] w-full" src={previewBlobUrl} title={item.name} />
-      </div>
-    )
+  if (item.preview === 'pdf' && previewBlob) {
+    return <PdfFirstPage blob={previewBlob} t={t} />
   }
 
   if (item.preview === 'text') {
@@ -67,11 +132,11 @@ function PreviewBody({ item, previewBlobUrl, previewError, previewText, previewS
   }
 
   return (
-    <div className="rounded-xl border bg-card p-8">
-      <FileType2 className="h-10 w-10 text-muted-foreground" />
-      <p className="mt-6 text-2xl font-semibold">{t('preview.metadataPreview')}</p>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        {t('preview.metadataDescription')}
+    <div className="rounded-xl border bg-card p-8 text-center">
+      <FileType2 className="mx-auto h-12 w-12 text-muted-foreground" />
+      <p className="mt-4 text-lg font-semibold">{t('preview.unavailableTitle')}</p>
+      <p className="mt-2 max-w-sm mx-auto text-sm leading-6 text-muted-foreground">
+        {t('preview.unavailableDescription')}
       </p>
     </div>
   )
@@ -80,6 +145,7 @@ function PreviewBody({ item, previewBlobUrl, previewError, previewText, previewS
 function PreviewModal({ item, onClose, onDownload }) {
   const { language, t } = useI18n()
   const [previewBlobUrl, setPreviewBlobUrl] = useState(null)
+  const [previewBlob, setPreviewBlob] = useState(null)
   const [previewText, setPreviewText] = useState('')
   const [previewState, setPreviewState] = useState('idle')
   const [previewError, setPreviewError] = useState('')
@@ -97,6 +163,7 @@ function PreviewModal({ item, onClose, onDownload }) {
   useEffect(() => {
     if (!item || !shouldFetchBinary) {
       setPreviewBlobUrl(null)
+      setPreviewBlob(null)
       setPreviewState('idle')
       return undefined
     }
@@ -117,8 +184,12 @@ function PreviewModal({ item, onClose, onDownload }) {
         }
 
         const blob = response.data
-        objectUrl = window.URL.createObjectURL(blob)
-        setPreviewBlobUrl(objectUrl)
+        if (item.preview === 'pdf') {
+          setPreviewBlob(blob)
+        } else {
+          objectUrl = window.URL.createObjectURL(blob)
+          setPreviewBlobUrl(objectUrl)
+        }
         setPreviewState('ready')
       } catch (error) {
         if (!isActive) {
@@ -212,6 +283,7 @@ function PreviewModal({ item, onClose, onDownload }) {
         <div className="grid gap-6 p-6 md:grid-cols-[1.4fr_0.8fr] md:p-8">
           <PreviewBody
             item={item}
+            previewBlob={previewBlob}
             previewBlobUrl={previewBlobUrl}
             previewError={previewError}
             previewState={previewState}

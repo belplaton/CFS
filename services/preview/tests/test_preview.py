@@ -336,3 +336,84 @@ async def test_preview_forwards_api_key(client):
             # Verify X-API-Key was sent
             call_args = mock_client.get.call_args
             assert call_args[1]["headers"]["X-API-Key"] == "test-secret-key"
+
+
+# ── Rate limiting ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_blocks_after_max_requests(client):
+    """After _RATE_LIMIT_MAX_REQUESTS, preview returns 429."""
+    import src.main as main_mod
+
+    # Reset rate limit store for this key
+    test_key = "Bearer test-token"[:16]
+    main_mod._rate_limit_store[test_key] = []
+
+    with _patch_fetch(b"content", "text/plain"):
+        # Exhaust the rate limit
+        for _ in range(main_mod._RATE_LIMIT_MAX_REQUESTS):
+            resp = await client.get(
+                f"/api/preview/{_TEST_FILE_ID}",
+                headers={"Authorization": "Bearer test-token"},
+            )
+            assert resp.status_code == 200
+
+        # Next request should be rate-limited
+        resp = await client.get(
+            f"/api/preview/{_TEST_FILE_ID}",
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert resp.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+    assert "Rate limit exceeded" in resp.json()["detail"]
+
+    # Clean up
+    main_mod._rate_limit_store.pop(test_key, None)
+
+
+# ── Error sanitization ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_upstream_5xx_error_is_sanitized(client):
+    """5xx errors from file-service should return generic message."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 500
+    mock_resp.text = "Internal DB connection pool exhausted"
+    mock_resp.headers = {"content-type": "text/plain"}
+
+    with patch("src.main._http_client") as mock_client:
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.is_closed = False
+
+        resp = await client.get(
+            f"/api/preview/{_TEST_FILE_ID}",
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert resp.status_code == 500
+    # The detail should NOT leak the internal error message
+    assert "DB connection" not in resp.json()["detail"]
+    assert resp.json()["detail"] == "File service error"
+
+
+@pytest.mark.asyncio
+async def test_upstream_4xx_error_preserved(client):
+    """4xx errors from file-service should preserve the detail."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 403
+    mock_resp.text = "Access denied"
+    mock_resp.headers = {"content-type": "text/plain"}
+
+    with patch("src.main._http_client") as mock_client:
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.is_closed = False
+
+        resp = await client.get(
+            f"/api/preview/{_TEST_FILE_ID}",
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Access denied"

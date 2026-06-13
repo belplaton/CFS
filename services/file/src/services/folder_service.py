@@ -20,6 +20,7 @@ from src.repositories.file import FileRepository
 from src.repositories.folder import FolderRepository
 from src.services import audit_service
 from src.utils import minio_client
+from src.utils.conflict import suggest_rename
 from src.utils.cursor import Cursor
 from src.utils.logging import get_logger
 from src.utils.validators import sanitize_filename
@@ -162,6 +163,19 @@ class FolderService:
             # Reject cycles: walking up from the destination must never
             # bring us back to the folder being moved.
             await self._assert_no_cycle(folder_id, parent_id, user_id)
+            # Check for name conflict in the target folder.
+            existing_names = await FolderRepository.list_existing_names_in_parent(
+                self.db, user_id, parent_id
+            )
+            existing_names |= await FileRepository.list_existing_names_in_folder(
+                self.db, user_id, parent_id
+            )
+            if folder.name in existing_names:
+                raise FileNameConflict(
+                    f"An item named '{folder.name}' already exists in the target folder",
+                    suggested_name=suggest_rename(folder.name),
+                    extra={"name": folder.name},
+                )
 
         folder.parent_id = parent_id
         await self.db.flush()

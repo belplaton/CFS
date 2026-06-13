@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     service_api_key: str = ""
 
     preview_max_size: int = 10485760  # 10 MB
-    preview_cache_ttl: int = 3600  # reserved for future caching
 
     cors_origins: list[str] = ["http://localhost:8080"]
 

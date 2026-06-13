@@ -110,7 +110,7 @@ function AppShell() {
             </Button>
           </div>
 
-          <div className="mt-auto px-2 pt-4">
+          <div className="mt-3 px-2">
             <Button
               className="w-full justify-center gap-2"
               onClick={() => logout()}

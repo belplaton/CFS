@@ -121,13 +121,13 @@ def validate_extension(filename: str) -> str:
     """
     Return the validated extension (lowercase, no dot).
 
-    Raises ``UnsupportedFileType`` if the extension is not on the whitelist.
+    Raises ``UnsupportedFileType`` if the extension is blocked (executable).
     """
     ext = get_extension(filename)
     if not ext:
         raise UnsupportedFileType("File has no extension")
-    if ext not in settings.allowed_ext_set:
-        raise UnsupportedFileType(f"Extension '{ext}' is not allowed")
+    if ext in settings.blocked_ext_set:
+        raise UnsupportedFileType(f"File type '.{ext}' is not allowed for security reasons")
     return ext
 
 
@@ -136,7 +136,7 @@ def validate_mime_type(content_type: Optional[str]) -> str:
     Return the validated MIME type (lowercased) or ``application/octet-stream``
     when the client did not provide one.
 
-    Raises ``UnsupportedFileType`` for explicitly disallowed types.
+    Raises ``UnsupportedFileType`` for blocked executable MIME types.
     """
     if not content_type:
         return "application/octet-stream"
@@ -144,9 +144,15 @@ def validate_mime_type(content_type: Optional[str]) -> str:
     primary = content_type.split(";", 1)[0].strip().lower()
     if not primary:
         return "application/octet-stream"
-    if primary not in settings.allowed_mime_set:
-        raise UnsupportedFileType(f"Content type '{primary}' is not allowed")
+    if primary in settings.blocked_mime_set:
+        raise UnsupportedFileType(f"Content type '{primary}' is not allowed for security reasons")
     return primary
+
+
+def is_previewable_extension(filename: str) -> bool:
+    """Return True if the file extension has built-in browser preview support."""
+    ext = get_extension(filename)
+    return ext in settings.previewable_ext_set
 
 
 def content_disposition_filename(name: str) -> str:
@@ -158,7 +164,7 @@ def content_disposition_filename(name: str) -> str:
     expect for non-ASCII filenames.
     """
     raw_bytes = name.encode("utf-8")
-    ascii_fallback = raw_bytes.decode("ascii", "replace").replace("?", "_")
+    ascii_fallback = raw_bytes.decode("ascii", "replace").replace("\ufffd", "_")
     # Strip quote-breaking characters from the fallback.
     ascii_fallback = "".join(
         ch if ch not in {'"', "\\", "\r", "\n"} else "_" for ch in ascii_fallback

@@ -358,6 +358,19 @@ class FileService:
         file = await self.get_file(file_id, user_id)
         if folder_id is not None:
             await self._assert_folder_owned(folder_id, user_id)
+        # Check for name conflict in the target folder.
+        existing_names = await FileRepository.list_existing_names_in_folder(
+            self.db, user_id, folder_id
+        )
+        existing_names |= await FolderRepository.list_existing_names_in_parent(
+            self.db, user_id, folder_id
+        )
+        if file.name in existing_names:
+            raise FileNameConflict(
+                f"An item named '{file.name}' already exists in the target folder",
+                suggested_name=suggest_rename(file.name),
+                extra={"name": file.name},
+            )
         file.folder_id = folder_id
         await self.db.flush()
         await audit_service.record_event(

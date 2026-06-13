@@ -55,25 +55,42 @@ class Settings(BaseSettings):
     # Filename length cap (matches DB column).
     max_filename_length: int = 255
 
-    # ==================== Upload policy: whitelist ====================
-    # Comma-separated envs, parsed into a frozenset.
-    # Defaults are a safe MVP whitelist (see ARCHITECTURE / ROADMAP).
-    allowed_mime_types: str = (
-        "image/jpeg,image/png,image/gif,image/webp,image/svg+xml,"
-        "application/pdf,text/plain,text/csv,application/json,"
-        "application/msword,"
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
-        "application/vnd.ms-excel,"
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
-        "application/vnd.ms-powerpoint,"
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation,"
-        "application/zip,application/x-tar,application/gzip"
+    # ==================== Upload policy ====================
+    # Extensions and MIME types that are BLOCKED (executable / dangerous).
+    # Everything else is allowed.  This is safer than a closed whitelist
+    # because new legitimate file types (e.g. .psd, .fig, .mp4) work out
+    # of the box without a config change.
+    blocked_extensions: str = (
+        "exe,bat,cmd,com,msi,scr,pif,vbs,vbe,wsf,wsh,ps1,psm1,psd1,"
+        "csh,ksh,sh,bash,zsh,"
+        "dll,sys,drv,inf,reg,rgs,"
+        "application,app,bin,cpl,msp,hta,cpl,jse"
     )
-    allowed_extensions: str = (
+    blocked_mime_types: str = (
+        "application/x-executable,"
+        "application/x-msdownload,"
+        "application/x-ms-shortcut,"
+        "application/x-windows-shortcut,"
+        "application/x-bat,"
+        "application/x-cmd,"
+        "application/x-vbs,"
+        "application/x-vbe,"
+        "application/x-wsf,"
+        "application/x-wsh,"
+        "application/x-ps1,"
+        "application/x-csh,"
+        "application/x-ksh,"
+        "application/x-sh,"
+        "application/x-ms-installer"
+    )
+
+    # Preview-capable extensions (used by frontend to decide what to show).
+    # Extensions NOT in this list are still uploadable, but the preview
+    # modal shows "Preview unavailable".
+    previewable_extensions: str = (
         "jpg,jpeg,png,gif,webp,svg,"
         "pdf,txt,csv,json,"
-        "doc,docx,xls,xlsx,ppt,pptx,"
-        "zip,tar,gz"
+        "doc,docx,xls,xlsx,ppt,pptx"
     )
 
     # ==================== JWT (shared with Auth Service) ====================
@@ -121,24 +138,41 @@ class Settings(BaseSettings):
 
     # ==================== Validators ====================
 
-    @field_validator("allowed_mime_types", "allowed_extensions")
+    @field_validator("blocked_extensions", "blocked_mime_types", "previewable_extensions")
     @classmethod
     def _strip(cls, v: str) -> str:
         return v.strip()
 
     @property
-    def allowed_mime_set(self) -> FrozenSet[str]:
+    def blocked_ext_set(self) -> FrozenSet[str]:
         return frozenset(
-            m.strip().lower() for m in self.allowed_mime_types.split(",") if m.strip()
+            e.strip().lower().lstrip(".")
+            for e in self.blocked_extensions.split(",")
+            if e.strip()
         )
 
     @property
-    def allowed_ext_set(self) -> FrozenSet[str]:
+    def blocked_mime_set(self) -> FrozenSet[str]:
+        return frozenset(
+            m.strip().lower() for m in self.blocked_mime_types.split(",") if m.strip()
+        )
+
+    @property
+    def previewable_ext_set(self) -> FrozenSet[str]:
         return frozenset(
             e.strip().lower().lstrip(".")
-            for e in self.allowed_extensions.split(",")
+            for e in self.previewable_extensions.split(",")
             if e.strip()
         )
+
+    # Keep these for backward compatibility (used by some tests / env overrides).
+    @property
+    def allowed_ext_set(self) -> FrozenSet[str]:
+        return frozenset()  # No longer used for validation; see blocked_ext_set.
+
+    @property
+    def allowed_mime_set(self) -> FrozenSet[str]:
+        return frozenset()  # No longer used for validation; see blocked_mime_set.
 
     def assert_safe_for_production(self) -> None:
         """Hard-fail in production if secrets are placeholders."""

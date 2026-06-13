@@ -27,8 +27,8 @@ http://:80 {
         -Server
     }
 
-    # CORS + browser headers for API responses
-    @api path /api/*
+    # CORS + browser headers for API responses (except binary file downloads)
+    @api path /api/* !path /api/files/*/download
     header @api {
         Access-Control-Allow-Origin "http://localhost:8080"
         Access-Control-Allow-Methods "GET, POST, PUT, DELETE, PATCH, OPTIONS"
@@ -79,14 +79,14 @@ http://:80 {
         reverse_proxy auth:8000
     }
 
-    # File Service API
-    @file_api path /api/files /api/files/* /api/folders /api/folders/* /api/trash /api/trash/* /api/search /api/search/*
+    # File Service API  (* = one segment, */* = two segments e.g. /api/files/{id}/download)
+    @file_api path /api/files /api/files/* /api/files/*/* /api/folders /api/folders/* /api/trash /api/trash/* /api/trash/*/* /api/search /api/search/*
     handle @file_api {
         reverse_proxy file:8000
     }
 
-    # Preview Service API
-    @preview_api path /api/preview /api/preview/*
+    # Preview Service API  (*/  handles /api/preview/{id}/thumbnail etc.)
+    @preview_api path /api/preview /api/preview/* /api/preview/*/*
     handle @preview_api {
         reverse_proxy preview:8000
     }

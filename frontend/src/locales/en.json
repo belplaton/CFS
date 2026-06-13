@@ -247,6 +247,8 @@
     "documentEmpty": "This document doesn't contain any readable text.",
     "metadataPreview": "File Details",
     "metadataDescription": "Detailed information about this file.",
+    "unavailableTitle": "Preview not available",
+    "unavailableDescription": "No preview is available for this file type. You can download the file to view it.",
     "metadata": "Metadata",
     "type": "Type",
     "size": "Size",
