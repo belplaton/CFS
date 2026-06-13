@@ -1,5 +1,4 @@
 """Tests for Preview Service."""
-
 from __future__ import annotations
 
 import json
@@ -13,11 +12,6 @@ from fastapi import status
 # Valid UUID for test file IDs
 _TEST_FILE_ID = str(uuid4())
 
-DOCX_MIME_TYPE = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-)
-XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
 
 # ── Health & root ────────────────────────────────────────────────
 
@@ -28,7 +22,7 @@ async def test_health_check(client):
     mock_response = MagicMock()
     mock_response.status_code = 200
 
-    with patch("src.services.file_client._http_client") as mock_client:
+    with patch("src.main._http_client") as mock_client:
         mock_client.get = AsyncMock(return_value=mock_response)
         mock_client.is_closed = False
 
@@ -44,7 +38,7 @@ async def test_health_check(client):
 @pytest.mark.asyncio
 async def test_health_check_degraded(client):
     """Health endpoint returns degraded when file-service is unreachable."""
-    with patch("src.services.file_client._http_client") as mock_client:
+    with patch("src.main._http_client") as mock_client:
         mock_client.get = AsyncMock(side_effect=Exception("connection refused"))
         mock_client.is_closed = False
 
@@ -110,10 +104,20 @@ async def test_invalid_file_id_returns_400(client):
 # ── Mock helpers ─────────────────────────────────────────────────
 
 
+def _make_file_response(content: bytes, mime_type: str, status_code: int = 200):
+    """Build a mock httpx.Response-like object."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.content = content
+    resp.text = content.decode("utf-8", errors="replace")
+    resp.headers = {"content-type": mime_type}
+    return resp
+
+
 def _patch_fetch(content: bytes, mime_type: str):
-    """Context manager that patches fetch_file_bytes at its import location."""
+    """Context manager that patches _fetch_file_bytes."""
     return patch(
-        "src.api.preview.fetch_file_bytes",
+        "src.main._fetch_file_bytes",
         new_callable=AsyncMock,
         return_value=(content, mime_type),
     )
@@ -194,6 +198,10 @@ async def test_preview_docx(client):
     assert "Test paragraph content" in data["content"]
 
 
+DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
 # ── XLSX preview ─────────────────────────────────────────────────
 
 
@@ -265,12 +273,12 @@ async def test_preview_text_truncation(client):
 @pytest.mark.asyncio
 async def test_preview_file_not_found(client):
     """Propagates 404 from file-service."""
-    with patch(
-        "src.api.preview.fetch_file_bytes", new_callable=AsyncMock
-    ) as mock_fetch:
+    with patch("src.main._fetch_file_bytes", new_callable=AsyncMock) as mock_fetch:
         from fastapi import HTTPException
 
-        mock_fetch.side_effect = HTTPException(status_code=404, detail="File not found")
+        mock_fetch.side_effect = HTTPException(
+            status_code=404, detail="File not found"
+        )
         resp = await client.get(
             f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
@@ -282,12 +290,12 @@ async def test_preview_file_not_found(client):
 @pytest.mark.asyncio
 async def test_preview_file_forbidden(client):
     """Propagates 403 from file-service."""
-    with patch(
-        "src.api.preview.fetch_file_bytes", new_callable=AsyncMock
-    ) as mock_fetch:
+    with patch("src.main._fetch_file_bytes", new_callable=AsyncMock) as mock_fetch:
         from fastapi import HTTPException
 
-        mock_fetch.side_effect = HTTPException(status_code=403, detail="Access denied")
+        mock_fetch.side_effect = HTTPException(
+            status_code=403, detail="Access denied"
+        )
         resp = await client.get(
             f"/api/preview/{_TEST_FILE_ID}",
             headers={"Authorization": "Bearer test-token"},
@@ -302,12 +310,12 @@ async def test_preview_file_forbidden(client):
 @pytest.mark.asyncio
 async def test_preview_forwards_api_key(client):
     """When SERVICE_API_KEY is set, it's sent as X-API-Key."""
-    with patch("src.services.file_client.settings") as mock_settings:
+    with patch("src.main.settings") as mock_settings:
         mock_settings.file_service_url = "http://file:8000"
         mock_settings.service_api_key = "test-secret-key"
         mock_settings.preview_max_size = 10485760
 
-        with patch("src.services.file_client._http_client") as mock_client:
+        with patch("src.main._http_client") as mock_client:
             mock_resp = MagicMock()
             mock_resp.status_code = 200
             mock_resp.headers = {"content-type": "text/plain"}
@@ -315,7 +323,6 @@ async def test_preview_forwards_api_key(client):
             # Mock streaming response
             async def aiter_bytes(chunk_size):
                 yield b"hello"
-
             mock_resp.aiter_bytes = aiter_bytes
 
             mock_client.get = AsyncMock(return_value=mock_resp)
@@ -336,16 +343,16 @@ async def test_preview_forwards_api_key(client):
 
 @pytest.mark.asyncio
 async def test_rate_limit_blocks_after_max_requests(client):
-    """After RATE_LIMIT_MAX_REQUESTS, preview returns 429."""
-    from src.services import rate_limiter as rl_mod
+    """After _RATE_LIMIT_MAX_REQUESTS, preview returns 429."""
+    import src.main as main_mod
 
     # Reset rate limit store for this key
     test_key = "Bearer test-token"[:16]
-    rl_mod._rate_limit_store[test_key] = []
+    main_mod._rate_limit_store[test_key] = []
 
     with _patch_fetch(b"content", "text/plain"):
         # Exhaust the rate limit
-        for _ in range(rl_mod.RATE_LIMIT_MAX_REQUESTS):
+        for _ in range(main_mod._RATE_LIMIT_MAX_REQUESTS):
             resp = await client.get(
                 f"/api/preview/{_TEST_FILE_ID}",
                 headers={"Authorization": "Bearer test-token"},
@@ -362,7 +369,7 @@ async def test_rate_limit_blocks_after_max_requests(client):
     assert "Rate limit exceeded" in resp.json()["detail"]
 
     # Clean up
-    rl_mod._rate_limit_store.pop(test_key, None)
+    main_mod._rate_limit_store.pop(test_key, None)
 
 
 # ── Error sanitization ────────────────────────────────────────────
@@ -376,7 +383,7 @@ async def test_upstream_5xx_error_is_sanitized(client):
     mock_resp.text = "Internal DB connection pool exhausted"
     mock_resp.headers = {"content-type": "text/plain"}
 
-    with patch("src.services.file_client._http_client") as mock_client:
+    with patch("src.main._http_client") as mock_client:
         mock_client.get = AsyncMock(return_value=mock_resp)
         mock_client.is_closed = False
 
@@ -399,7 +406,7 @@ async def test_upstream_4xx_error_preserved(client):
     mock_resp.text = "Access denied"
     mock_resp.headers = {"content-type": "text/plain"}
 
-    with patch("src.services.file_client._http_client") as mock_client:
+    with patch("src.main._http_client") as mock_client:
         mock_client.get = AsyncMock(return_value=mock_resp)
         mock_client.is_closed = False
 

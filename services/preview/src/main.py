@@ -5,35 +5,101 @@ This service generates text-oriented previews for formats browsers do
 not render well on their own, while browser-native previews (images /
 PDFs) can still be fetched directly from the file service.
 """
-
 from __future__ import annotations
 
-from fastapi import FastAPI
+from collections import defaultdict
+from io import BytesIO
+import json
+import time
+import uuid
+
+import httpx
+import structlog
+from defusedxml import defuse_stdlib
+from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from docx import Document
+from openpyxl import load_workbook
+from pydantic import BaseModel
 
 from src.config import settings
-from src.middleware import RequestIDMiddleware
-from src.api import preview_router, health_router
-
-# ── Re-exports for backward-compatible test patches ──────────────
-# Tests that patch ``src.main.<name>`` will continue to work because
-# endpoint modules import directly from their source modules; however,
-# keeping these names importable from main avoids surprise breakage in
-# any downstream tooling that reaches into main for them.
-from src.services.file_client import get_http_client as _get_http_client  # noqa: F401
-from src.services.file_client import _http_client  # noqa: F401
-from src.services.file_client import fetch_file_bytes as _fetch_file_bytes  # noqa: F401
-from src.services.rate_limiter import _rate_limit_store  # noqa: F401
-from src.services.rate_limiter import (
-    RATE_LIMIT_MAX_REQUESTS as _RATE_LIMIT_MAX_REQUESTS,
-)  # noqa: F401
-from src.services.preview import TEXT_MIME_TYPES  # noqa: F401
-from src.services.preview import DOCX_MIME_TYPE  # noqa: F401
-from src.services.preview import XLSX_MIME_TYPE  # noqa: F401
-from src.schemas.preview import TextPreviewResponse  # noqa: F401
 
 
-# ── Application ──────────────────────────────────────────────────
+logger = structlog.get_logger()
+
+TEXT_MIME_TYPES = {
+    "text/plain",
+    "text/csv",
+    "application/json",
+}
+
+DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+# Reused across requests — httpx handles connection pooling internally.
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=30.0)
+    return _http_client
+
+
+# ── Rate limiter (simple in-memory fixed-window) ─────────────────
+
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT_WINDOW = 60  # seconds
+_RATE_LIMIT_MAX_REQUESTS = 30  # per window per user
+
+
+def _check_rate_limit(user_key: str) -> None:
+    now = time.monotonic()
+    window_start = now - _RATE_LIMIT_WINDOW
+    _rate_limit_store[user_key] = [
+        ts for ts in _rate_limit_store[user_key] if ts > window_start
+    ]
+    if len(_rate_limit_store[user_key]) >= _RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded. Try again later.",
+        )
+    _rate_limit_store[user_key].append(now)
+
+
+# ── DOCX XXE protection ──────────────────────────────────────────
+
+def _secure_docx_parser(content: bytes) -> Document:
+    """Parse DOCX with XXE / entity expansion protection.
+
+    python-docx uses lxml internally. We validate the input is a valid
+    zip (DOCX is a zip archive) and use defusedxml to monkeypatch the
+    stdlib xml parser to block entity expansion attacks.
+    """
+    import zipfile
+
+    # Validate it's a valid zip first
+    try:
+        zipfile.ZipFile(BytesIO(content))
+    except zipfile.BadZipFile:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid DOCX file format",
+        )
+
+    # defuse_stdlib patches xml.etree to block entity expansion.
+    # This protects python-docx's internal lxml-based parser as well,
+    # since the underlying XML parsing is hardened.
+    defuse_stdlib()
+    return Document(BytesIO(content))
+
+
+class TextPreviewResponse(BaseModel):
+    kind: str = "text"
+    content: str
+    truncated: bool = False
+
 
 app = FastAPI(
     title="Cloud Storage Preview Service",
@@ -51,13 +117,242 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(RequestIDMiddleware)
 
-app.include_router(health_router)
-app.include_router(preview_router)
+
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+@app.get("/health")
+async def health_check():
+    file_service_ok = True
+    try:
+        client = _get_http_client()
+        resp = await client.get(f"{settings.file_service_url.rstrip('/')}/health")
+        file_service_ok = resp.status_code == 200
+    except Exception:
+        file_service_ok = False
+
+    healthy = file_service_ok
+    return {
+        "status": "healthy" if healthy else "degraded",
+        "service": "preview",
+        "file_service": "healthy" if file_service_ok else "unreachable",
+    }
+
+
+@app.get("/api/preview/")
+async def root():
+    return {
+        "message": "Preview Service is running",
+        "version": "1.0.0",
+        "generated_previews_enabled": True,
+        "supported_text_previews": [
+            "txt",
+            "csv",
+            "json",
+            "docx",
+            "xlsx",
+        ],
+        "note": "Images and PDFs can still use direct file download preview.",
+    }
+
+
+def _require_auth_header(authorization: str | None) -> str:
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+        )
+    return authorization
+
+
+async def _fetch_file_bytes(file_id: str, authorization: str) -> tuple[bytes, str]:
+    url = f"{settings.file_service_url.rstrip('/')}/api/files/{file_id}/download"
+    headers = {"Authorization": authorization}
+    if settings.service_api_key:
+        headers["X-API-Key"] = settings.service_api_key
+
+    client = _get_http_client()
+    try:
+        response = await client.get(url, headers=headers)
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="File service request timed out",
+        )
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Preview service cannot reach file service",
+        )
+
+    if response.status_code >= 400:
+        # Sanitize upstream errors: never forward internal details to clients.
+        if response.status_code >= 500:
+            detail = "File service error"
+        else:
+            detail = response.text or "Unable to fetch source file"
+        raise HTTPException(status_code=response.status_code, detail=detail)
+
+    # Stream-read with size limit to avoid OOM on large files.
+    # Use bytearray for O(n) concatenation instead of bytes O(n²).
+    content = bytearray()
+    async for chunk in response.aiter_bytes(8192):
+        content.extend(chunk)
+        if len(content) > settings.preview_max_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File exceeds maximum preview size of {settings.preview_max_size} bytes",
+            )
+
+    mime_type = response.headers.get("content-type", "").split(";")[0].strip()
+    return content, mime_type
+
+
+def _limit_text(value: str, max_chars: int = 40000) -> tuple[str, bool]:
+    if len(value) <= max_chars:
+        return value, False
+    return value[:max_chars], True
+
+
+def _preview_text_bytes(content: bytes) -> TextPreviewResponse:
+    text = content.decode("utf-8", errors="replace")
+    limited, truncated = _limit_text(text)
+    return TextPreviewResponse(content=limited, truncated=truncated)
+
+
+def _preview_json_bytes(content: bytes) -> TextPreviewResponse:
+    parsed = json.loads(content.decode("utf-8", errors="replace"))
+    pretty = json.dumps(parsed, ensure_ascii=False, indent=2)
+    limited, truncated = _limit_text(pretty)
+    return TextPreviewResponse(content=limited, truncated=truncated)
+
+
+def _preview_docx_bytes(content: bytes) -> TextPreviewResponse:
+    document = _secure_docx_parser(content)
+    lines: list[str] = []
+
+    for paragraph in document.paragraphs:
+        text = paragraph.text.strip()
+        if text:
+            lines.append(text)
+
+    for table in document.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            if any(cells):
+                lines.append(" | ".join(cells))
+
+    preview_text = "\n\n".join(lines).strip() or "Document contains no extractable text."
+    limited, truncated = _limit_text(preview_text)
+    return TextPreviewResponse(content=limited, truncated=truncated)
+
+
+def _preview_xlsx_bytes(content: bytes) -> TextPreviewResponse:
+    workbook = load_workbook(filename=BytesIO(content), read_only=True, data_only=True)
+    sheet = workbook.worksheets[0]
+    rows: list[str] = [f"Sheet: {sheet.title}"]
+
+    for index, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+        if index > 100:
+            rows.append("...")
+            break
+        formatted = ["" if cell is None else str(cell) for cell in row]
+        rows.append("\t".join(formatted).rstrip())
+
+    preview_text = "\n".join(rows).strip() or "Spreadsheet contains no previewable cells."
+    limited, truncated = _limit_text(preview_text)
+    return TextPreviewResponse(content=limited, truncated=truncated)
+
+
+def _validate_file_id(file_id: str) -> str:
+    """Validate that file_id is a valid UUID to prevent SSRF via path traversal."""
+    try:
+        uuid.UUID(file_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file ID format",
+        )
+    return file_id
+
+
+@app.get("/api/preview/{file_id}", response_model=TextPreviewResponse)
+async def get_preview(file_id: str, authorization: str | None = Header(default=None)):
+    _validate_file_id(file_id)
+    auth_header = _require_auth_header(authorization)
+
+    # Rate limit by token prefix (first 16 chars) to avoid storing full JWT.
+    rate_key = authorization[:16] if authorization else "anonymous"
+    _check_rate_limit(rate_key)
+
+    logger.info("preview_request", file_id=file_id)
+
+    content, mime_type = await _fetch_file_bytes(file_id, auth_header)
+
+    if mime_type == "application/json":
+        return _preview_json_bytes(content)
+
+    if mime_type in TEXT_MIME_TYPES or mime_type.startswith("text/"):
+        return _preview_text_bytes(content)
+
+    if mime_type == DOCX_MIME_TYPE:
+        return _preview_docx_bytes(content)
+
+    if mime_type == XLSX_MIME_TYPE:
+        return _preview_xlsx_bytes(content)
+
+    raise HTTPException(
+        status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        detail="Preview is not available for this file type",
+    )
+
+
+@app.get("/api/preview/{file_id}/thumbnail")
+async def get_thumbnail(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+):
+    _validate_file_id(file_id)
+    _require_auth_header(authorization)
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Thumbnails are not enabled yet",
+    )
+
+
+@app.post("/api/preview/{file_id}/generate")
+async def generate_preview(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+):
+    _validate_file_id(file_id)
+    _require_auth_header(authorization)
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Background preview generation is not enabled yet",
+    )
+
+
+@app.delete("/api/preview/{file_id}")
+async def delete_preview(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+):
+    _validate_file_id(file_id)
+    _require_auth_header(authorization)
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Stored previews are not enabled yet",
+    )
 
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)

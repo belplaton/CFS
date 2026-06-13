@@ -127,9 +127,7 @@ def validate_extension(filename: str) -> str:
     if not ext:
         raise UnsupportedFileType("File has no extension")
     if ext in settings.blocked_ext_set:
-        raise UnsupportedFileType(
-            f"File type '.{ext}' is not allowed for security reasons"
-        )
+        raise UnsupportedFileType(f"File type '.{ext}' is not allowed for security reasons")
     return ext
 
 
@@ -147,9 +145,7 @@ def validate_mime_type(content_type: Optional[str]) -> str:
     if not primary:
         return "application/octet-stream"
     if primary in settings.blocked_mime_set:
-        raise UnsupportedFileType(
-            f"Content type '{primary}' is not allowed for security reasons"
-        )
+        raise UnsupportedFileType(f"Content type '{primary}' is not allowed for security reasons")
     return primary
 
 

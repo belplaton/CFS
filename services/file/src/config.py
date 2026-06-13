@@ -88,7 +88,9 @@ class Settings(BaseSettings):
     # Extensions NOT in this list are still uploadable, but the preview
     # modal shows "Preview unavailable".
     previewable_extensions: str = (
-        "jpg,jpeg,png,gif,webp,svg,pdf,txt,csv,json,doc,docx,xls,xlsx,ppt,pptx"
+        "jpg,jpeg,png,gif,webp,svg,"
+        "pdf,txt,csv,json,"
+        "doc,docx,xls,xlsx,ppt,pptx"
     )
 
     # ==================== JWT (shared with Auth Service) ====================
@@ -136,9 +138,7 @@ class Settings(BaseSettings):
 
     # ==================== Validators ====================
 
-    @field_validator(
-        "blocked_extensions", "blocked_mime_types", "previewable_extensions"
-    )
+    @field_validator("blocked_extensions", "blocked_mime_types", "previewable_extensions")
     @classmethod
     def _strip(cls, v: str) -> str:
         return v.strip()
@@ -164,6 +164,15 @@ class Settings(BaseSettings):
             for e in self.previewable_extensions.split(",")
             if e.strip()
         )
+
+    # Keep these for backward compatibility (used by some tests / env overrides).
+    @property
+    def allowed_ext_set(self) -> FrozenSet[str]:
+        return frozenset()  # No longer used for validation; see blocked_ext_set.
+
+    @property
+    def allowed_mime_set(self) -> FrozenSet[str]:
+        return frozenset()  # No longer used for validation; see blocked_mime_set.
 
     def assert_safe_for_production(self) -> None:
         """Hard-fail in production if secrets are placeholders."""

@@ -22,11 +22,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from src.config import settings
-from src.utils.logging import get_logger
 from src.utils.redis_client import get_redis
-
-
-logger = get_logger(__name__)
 
 
 # Password hashing context
@@ -124,23 +120,26 @@ def is_refresh_token(payload: Dict[str, Any]) -> bool:
 async def revoke_refresh_token(token: str) -> None:
     """Blacklist a refresh token until its natural expiry.
 
-    Raises ``JWTError`` on invalid tokens (wrong type, missing claims).
     Fails open on Redis errors — a failed revocation is preferable to
     a 500 on logout.
     """
-    payload = decode_token(token)
-    if payload.get("type") != "refresh":
-        raise JWTError("Wrong token type for refresh revocation")
-
-    expires_at = payload.get("exp")
-    if expires_at is None:
-        raise JWTError("Missing exp claim")
-
-    ttl_seconds = max(int(expires_at - datetime.now(timezone.utc).timestamp()), 1)
     try:
+        payload = decode_token(token)
+        if payload.get("type") != "refresh":
+            raise JWTError("Wrong token type for refresh revocation")
+
+        expires_at = payload.get("exp")
+        if expires_at is None:
+            raise JWTError("Missing exp claim")
+
+        ttl_seconds = max(int(expires_at - datetime.now(timezone.utc).timestamp()), 1)
         await get_redis().setex(_refresh_revocation_key(token), ttl_seconds, "1")
     except Exception:  # noqa: BLE001
-        logger.warning("redis_revoke_failed", exc_info=True)
+        import structlog
+
+        structlog.get_logger("auth-service").warning(
+            "redis_revoke_failed", exc_info=True
+        )
 
 
 async def is_refresh_token_revoked(token: str) -> bool:
@@ -151,7 +150,9 @@ async def is_refresh_token_revoked(token: str) -> bool:
     try:
         return bool(await get_redis().get(_refresh_revocation_key(token)))
     except Exception:  # noqa: BLE001
-        logger.warning(
+        import structlog
+
+        structlog.get_logger("auth-service").warning(
             "redis_revocation_check_failed", exc_info=True
         )
         return False

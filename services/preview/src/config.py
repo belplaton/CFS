@@ -1,7 +1,6 @@
 """
 Configuration settings for Preview Service
 """
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
