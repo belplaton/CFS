@@ -26,7 +26,7 @@ function AppShell() {
   const user = useAuthStore((state) => state.user)
   const bootstrap = useFileStore((state) => state.bootstrap)
   const quota = useFileStore((state) => state.quota)
-  const quotaBytes = quota.total || user?.quotaBytes || 5 * 1024 * 1024 * 1024
+  const quotaBytes = user?.quotaBytes || quota.total || 5 * 1024 * 1024 * 1024
   const plan = user?.plan ?? 'Free'
   const usedBytes = quota.used || user?.usedBytes || 0
   const usagePercent = Math.min(Math.round((usedBytes / Math.max(quotaBytes, 1)) * 100), 100)

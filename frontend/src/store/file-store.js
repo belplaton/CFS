@@ -145,6 +145,24 @@ function canMoveItem(items, id, parentId) {
   return !descendantIds.includes(parentId)
 }
 
+function readPersistedAuthQuota() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = window.localStorage.getItem('cfs-auth-store')
+    if (!raw) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw)
+    return parsed?.state?.user?.quotaBytes ?? null
+  } catch {
+    return null
+  }
+}
+
 const MAX_CONCURRENT_UPLOADS = 5
 
 let uploadIdCounter = 0
@@ -222,8 +240,15 @@ export const useFileStore = create(
       refreshQuota: async () => {
         try {
           const response = await client.get('/files/quota')
-          set({ quota: response.data })
-          return response.data
+          const preferredTotal = readPersistedAuthQuota() ?? response.data.total
+          const preferredUsed = response.data.used ?? 0
+          const nextQuota = {
+            used: preferredUsed,
+            total: preferredTotal,
+            percent: Math.round((preferredUsed / Math.max(preferredTotal, 1)) * 1000) / 10,
+          }
+          set({ quota: nextQuota })
+          return nextQuota
         } catch (error) {
           return null
         }
