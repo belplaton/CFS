@@ -10,6 +10,18 @@ Preview service **does not decode JWT** itself. It forwards the `Authorization` 
 
 ---
 
+## Preview Strategy (by file type)
+
+| File Type | Preview Method |
+|-----------|---------------|
+| Image (png, jpg, gif, webp) | Browser-native via authenticated download |
+| PDF | Client-side `pdfjs-dist` (renders first page only) |
+| Text (txt, csv, json) | Client-side via file-service `/api/files/{id}/text-preview` |
+| DOCX, XLSX | Preview-service text extraction (`GET /api/preview/{file_id}`) |
+| Other | "Preview unavailable" message in frontend |
+
+---
+
 ## Endpoints
 
 ### GET /api/preview/{file_id}

@@ -25,9 +25,11 @@ services/auth/
 │   │   ├── __init__.py               # api_router (auth + health)
 │   │   ├── auth.py                   # /api/auth/{register,login,me,refresh,forgot,reset,verify}
 │   │   ├── health.py                 # GET /health (DB ping)
+│   │   ├── users.py                  # GET /api/users/{id}/quota (X-API-Key)
 │   │   └── exception_handlers.py     # DomainError → JSON, RateLimitError → 429+Retry-After
 │   ├── middleware/
-│   │   └── request_id.py             # X-Request-ID header + structlog binding
+│   │   ├── request_id.py             # X-Request-ID header + structlog binding
+│   │   └── access_log.py             # Per-request access logging
 │   ├── repositories/
 │   │   ├── __init__.py
 │   │   └── user.py                   # UserRepository (get_by_id, get_by_email, add, delete)
@@ -197,3 +199,20 @@ Redis down → `_hit_redis` ловит Exception, логирует `rate_limiter
 2. Новые cross-service долги (если Auth меняет JWT/API)
 3. Новые переменные окружения
 4. Изменения в API (новые эндпоинты, breaking changes)
+
+---
+
+## 🛑 Сессия 2026-06-13 — Auth hydration + error handling fixes
+
+**Исправлено:**
+
+1. **Auth hydration** — `onRehydrateStorage` в `auth-store.js` вызывает `refreshProfile()` когда `accessToken` есть в localStorage но `user` равен null. Это предотвращает blank screen после login/refresh.
+
+2. **Error handling** — `login` и `register` actions теперь корректно парсят массивы `detail` из 422 ответов (Pydantic validation errors) в human-readable строки вместо показа `[object Object]`.
+
+3. **Logout** — `logout()` и `resetAuthState()` вызывают `useFileStore.getState().resetData()` для очистки file store state.
+
+4. **AppShell** — добавлен loading guard: если `accessToken` есть но `user` null, показывается loading screen вместо пустого экрана.
+
+**Известные ограничения:**
+- `test@test.test` отклоняется Pydantic EmailStr (зарезервированный TLD `.test`). Использовать реальные email для тестов.

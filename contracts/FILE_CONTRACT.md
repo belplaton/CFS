@@ -179,6 +179,12 @@ Returns `StreamingResponse` with:
 
 ### POST /api/files/{file_id}/move
 
+Query params:
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `on_conflict` | `reject\|rename` | `reject` | On name collision in target folder |
+
 Request:
 ```json
 {
@@ -191,9 +197,17 @@ Response `200`:
 { "status": "moved" }
 ```
 
+Errors: `409` (conflict, includes `suggested_name`), `404` (not found)
+
 ---
 
 ### PATCH /api/files/{file_id}/rename
+
+Query params:
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `on_conflict` | `reject\|rename` | `reject` | On name collision in same folder |
 
 Request:
 ```json
@@ -206,6 +220,8 @@ Response `200`:
 ```json
 { "status": "renamed" }
 ```
+
+Errors: `409` (conflict, includes `suggested_name`), `404` (not found)
 
 ---
 
@@ -295,6 +311,7 @@ Response `201`:
 ```json
 {
   "id": "uuid",
+  "kind": "folder",
   "name": "My Folder",
   "parent_id": "uuid | null",
   "path": "string | null",
@@ -303,7 +320,7 @@ Response `201`:
 }
 ```
 
-Errors: `404` (parent not found), `409` (cycle detected)
+Errors: `404` (parent not found), `409` (cycle detected), `409` (name conflict with existing file or folder, includes `suggested_name`)
 
 ---
 
@@ -342,7 +359,7 @@ Response `200`:
 { "status": "updated" }
 ```
 
-Errors: `409` (cycle), `404` (not found)
+Errors: `409` (cycle), `409` (name conflict, includes `suggested_name`), `404` (not found)
 
 ---
 
@@ -482,7 +499,8 @@ Response `503` when unhealthy.
 | `payload_too_large` | 413 |
 | `quota_exceeded` | 413 |
 | `cycle_detected` | 409 |
-| `file_name_conflict` | 409 |
+| `file_name_conflict` | 409 | includes `suggested_name` in `extra` |
+| `rate_limit_exceeded` | 429 | includes `retry_after` in `extra` |
 | `internal_error` | 500 |
 
 ---
