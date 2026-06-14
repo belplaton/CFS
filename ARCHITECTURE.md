@@ -38,7 +38,6 @@ graph TB
         direction TB
         PG_Auth[("PostgreSQL<br/>auth:5433")]
         PG_File[("PostgreSQL<br/>file:5434")]
-        PG_Preview[("PostgreSQL<br/>preview:5435")]
         MinIO[("MinIO<br/>9000 / 9001")]
         Redis[("Redis<br/>6379")]
     end
@@ -289,10 +288,6 @@ erDiagram
     folders ||--o{ files : "contains"
     files ||--o{ audit_logs : "audited"
 ```
-
-### Preview Service
-
-Preview Service не имеет собственной БД в runtime. Используется только `preview_cache` при необходимости кэширования (реализация в планах).
 
 ## MinIO: структура бакета
 

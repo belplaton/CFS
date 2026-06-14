@@ -9,7 +9,7 @@
 - Загрузка / скачивание / удаление файлов
 - Управление папками (создание, переименование, перемещение, рекурсивное удаление)
 - Корзина (soft delete, restore, permanent delete, TTL cleanup 30 дней)
-- Квоты и отображение usage в UI (free / premium)
+- Квоты и отображение usage в UI (free / pro / team)
 - Поиск по имени файлов через backend
 - Конфликт имён при загрузке/создании/переименовании/перемещении (reject|rename)
 - Bulk операции (удаление, перемещение до 200 файлов)
@@ -20,18 +20,6 @@
 - Audit log + structured logging (structlog)
 - Rate limiting (Redis fixed-window)
 - Health check endpoints (DB, MinIO, Redis probes)
-
-### Частично готово
-- Billing UI показывает текущую квоту, но не меняет план на backend
-- Email verification flow (backend готов, frontend не подключён)
-- Reset-password confirmation flow (backend готов, frontend не подключён)
-
-### Не реализовано
-- Google OAuth
-- 2FA (TOTP)
-- Shared file links
-- Real-time sync (WebSocket)
-- CI pipeline, security tests, load testing
 
 ## Быстрый старт
 
@@ -164,7 +152,6 @@ CloudFileStorage/
 |---|---|---|
 | PostgreSQL (auth) | 5433 | БД Auth Service |
 | PostgreSQL (file) | 5434 | БД File Service |
-| PostgreSQL (preview) | 5435 | БД Preview Service |
 | MinIO | 9000, 9001 | Объектное хранилище |
 | Redis | 6379 | Кэш / rate limiting |
 
