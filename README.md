@@ -33,44 +33,6 @@
 - Real-time sync (WebSocket)
 - CI pipeline, security tests, load testing
 
-## Архитектура
-
-```
-┌───────────────────────────────────────────────────────────────┐
-│                      Caddy Gateway (8080)                       │
-└───────────────────────────────────────────────────────────────┘
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        │                       │                       │
-        ▼                       ▼                       ▼
-┌───────────────┐      ┌───────────────┐      ┌───────────────┐
-│  Auth Service │      │  File Service │      │Preview Service│
-│   (FastAPI)   │      │   (FastAPI)   │      │   (FastAPI)   │
-│  port 8000    │      │  port 8000    │      │  port 8000    │
-└───────┬───────┘      └───────┬───────┘      └───────────────┘
-        │                      │                      │
-        ▼                      ▼                      ▼
-┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-│  PostgreSQL  │      │  PostgreSQL  │      │  PostgreSQL  │
-│  (auth:5433) │      │  (file:5434) │      │(preview:5435)│
-└──────────────┘      └──────┬───────┘      └──────────────┘
-                             │
-                ┌────────────┼────────────┐
-                │            │            │
-                ▼            ▼            ▼
-        ┌──────────┐  ┌──────────┐  ┌──────────┐
-        │   MinIO  │  │   Redis  │  │ Frontend │
-        │(9000,9001│  │  (6379)  │  │  (8080)  │
-        └──────────┘  └──────────┘  └──────────┘
-```
-
-Ключевые принципы:
-- Каждый сервис имеет свою базу данных
-- Redis для кэширования и rate limiting
-- MinIO: единый бакет с префиксами пользователей
-- API keys для межсервисной коммуникации
-- Caddy reverse proxy с CORS и security headers
-
 ## Быстрый старт
 
 ### 1. Клонирование
@@ -130,8 +92,17 @@ CloudFileStorage/
 │
 ├── services/
 │   ├── auth/                   # Auth Service (FastAPI)
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   └── src/
 │   ├── file/                   # File Service (FastAPI)
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   └── src/
 │   └── preview/                # Preview Service (FastAPI)
+│       ├── Dockerfile
+│       ├── requirements.txt
+│       └── src/
 │
 ├── frontend/                   # React SPA
 │   ├── src/
@@ -139,7 +110,8 @@ CloudFileStorage/
 │   └── package.json
 │
 └── scripts/                    # Утилиты для проверки стека
-    └── gateway_smoke.py
+    ├── gateway_smoke.py        # Полный smoke-тест через gateway
+    └── check_trash.py          # Ручная проверка корзины
 ```
 
 ## Технологии

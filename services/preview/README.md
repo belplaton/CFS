@@ -26,7 +26,7 @@ src/
 ### Docker Compose (рекомендуется)
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 Сервис будет доступен на внутреннем порту `8000` (проксируется через gateway на `http://localhost:8080/api/preview`).
