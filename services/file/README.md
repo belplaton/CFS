@@ -1,705 +1,321 @@
 # File Service
 
-Сервис управления файлами и папками для платформы Cloud File Storage (CFS). Отвечает за загрузку, хранение, перемещение, удаление, поиск и квотирование файлов.
-
-## Содержание
-
-- [Архитектура](#архитектура)
-- [Стек](#стек)
-- [Структура проекта](#структура-проекта)
-- [Быстрый старт](#быстрый-старт)
-- [Конфигурация](#конфигурация)
-- [Аутентификация](#аутентификация)
-- [API Reference](#api-reference)
-- [Rate Limiting](#rate-limiting)
-- [Обработка ошибок](#обработка-ошибок)
-- [Object Key Layout (MinIO)](#object-key-layout-minio)
-- [Схема БД](#схема-бд)
-- [Тестирование](#тестирование)
-- [Деплой](#деплой)
-- [Конвенции кода](#конвенции-кода)
-
----
-
-## Архитектура
-
-```
-┌─────────┐     ┌──────────┐     ┌────────────┐     ┌──────────┐
-│ Frontend│────▶│  Caddy   │────▶│ File       │────▶│ Postgres │
-│ (React) │     │ (gateway)│     │ Service    │     │ 15       │
-└─────────┘     └──────────┘     │ :8000      │     └──────────┘
-                                 │            │     ┌──────────┐
-                                 │  ┌──────┐  │────▶│ MinIO    │
-                                 │  │Redis │  │     │ (S3)    │
-                                 │  └──────┘  │     └──────────┘
-                                 └─────┬──────┘
-                                       │
-                                       ▼
-                                 ┌──────────┐
-                                 │ Auth     │
-                                 │ Service  │
-                                 │ :8000    │
-                                 └──────────┘
-```
-
-**Слои:**
-- **API** (`src/api/`) — FastAPI роутеры, маппинг HTTP → service
-- **Service** (`src/services/`) — бизнес-логика, domain exceptions
-- **Repository** (`src/repositories/`) — все SQL-запросы
-- **Model** (`src/models/`) — SQLAlchemy 2.0 ORM
-- **Schema** (`src/schemas/`) — Pydantic v2 валидация
-
----
+Микросервис управления файлами и папками для облачного хранилища CFS (Cloud File Storage). Отвечает за полный жизненный цикл файлов: загрузку, скачивание, организацию, поиск, мягкое удаление (корзину), восстановление и окончательное удаление.
 
 ## Стек
 
 | Компонент | Технология |
-|-----------|-----------|
-| Framework | FastAPI 0.109 |
-| ORM | SQLAlchemy 2.0 (async, Mapped[]) |
-| Migrations | Alembic |
-| БД | PostgreSQL 15 + asyncpg |
-| Хранилище | MinIO (S3-совместимый) |
-| Кэш / Rate Limit | Redis 5.0 |
-| JWT | python-jose (HS256) |
-| Logging | structlog (JSON в production, console в dev) |
-| Планировщик | APScheduler (trash TTL cleanup) |
-| Валидация | Pydantic v2 + pydantic-settings |
-| HTTP клиент | httpx (для Auth service) |
-
----
+|---|---|
+| Framework | FastAPI (async) |
+| ASGI-сервер | Uvicorn |
+| База данных | PostgreSQL (SQLAlchemy 2.0 async + asyncpg) |
+| Миграции | Alembic |
+| Объектное хранилище | MinIO (S3-совместимое) |
+| Кэш / Rate-limiting / Идемпотентность | Redis |
+| Авторизация | JWT (HS256, разделяется с Auth Service) |
+| HTTP-клиент | httpx (межсервисные вызовы) |
+| Логирование | structlog (JSON в production, консоль в dev) |
+| Фоновые задачи | APScheduler (AsyncIO, cron) |
+| Валидация схем | Pydantic v2 + pydantic-settings |
 
 ## Структура проекта
 
 ```
-services/file/
-├── src/
-│   ├── main.py                      # FastAPI app, lifespan, middleware stack
-│   ├── config.py                    # Settings (pydantic-settings)
-│   ├── exceptions.py                # Доменные исключения
-│   ├── scheduler.py                 # APScheduler bootstrap (trash cleanup)
-│   ├── models/
-│   │   ├── __init__.py              # Engine, Base, get_db, async_session
-│   │   ├── file.py                  # File ORM model
-│   │   ├── folder.py                # Folder ORM model
-│   │   └── audit_log.py            # AuditLog ORM model
-│   ├── schemas/
-│   │   ├── __init__.py              # Реэкспорт всех схем
-│   │   ├── common.py                # ItemResponse, QuotaResponse, Page[T]
-│   │   ├── file.py                  # FileResponse, FileUploadResponse, TextPreviewResponse
-│   │   ├── folder.py                # FolderCreate, FolderUpdate, FolderResponse
-│   │   ├── trash.py                 # TrashItemResponse
-│   │   ├── search.py               # SearchResponse
-│   │   └── bulk.py                  # BulkDeleteRequest, BulkMoveRequest, BulkOperationResult
-│   ├── services/
-│   │   ├── file_service.py          # upload, delete, restore, move, rename, bulk ops
-│   │   ├── folder_service.py        # CRUD + cycle detection + recursive trash
-│   │   ├── quota_service.py         # pg_advisory_xact_lock + Auth quota fetch
-│   │   ├── trash_service.py         # list, restore, permanent delete, empty
-│   │   ├── search_service.py        # ILIKE search
-│   │   ├── audit_service.py         # Best-effort audit log insert
-│   │   └── trash_cleanup_service.py # TTL hard-delete (APScheduler cron)
-│   ├── repositories/
-│   │   ├── __init__.py
-│   │   ├── file.py                  # FileRepository: all SQL для files
-│   │   └── folder.py                # FolderRepository: all SQL для folders
-│   ├── api/
-│   │   ├── __init__.py              # api_router (агрегация)
-│   │   ├── exception_handlers.py    # DomainError → JSON mapping
-│   │   ├── files.py                 # /api/files/*
-│   │   ├── folders.py               # /api/folders/*
-│   │   ├── trash.py                 # /api/trash/*
-│   │   ├── search.py                # /api/search/*
-│   │   └── health.py                # /health (DB, MinIO, Redis probes)
-│   ├── middleware/
-│   │   ├── __init__.py
-│   │   ├── request_id.py            # X-Request-ID generation/propagation
-│   │   ├── request_meta.py          # Client IP + User-Agent capture
-│   │   ├── access_log.py            # Structured per-request access log
-│   │   └── idempotency.py           # Idempotency-Key для upload (Redis)
-│   └── utils/
-│       ├── dependencies.py          # get_current_user_id (JWT validation)
-│       ├── minio_client.py          # Singleton + helpers (put/move/get/stream)
-│       ├── validators.py            # sanitize_filename, ext, MIME, Content-Disposition
-│       ├── rate_limiter.py          # Redis fixed-window rate limiting
-│       ├── cursor.py                # Base64-json cursor pagination
-│       ├── conflict.py              # find_available_name, suggest_rename
-│       ├── auth_client.py           # HTTP client → Auth /api/users/{id}/quota
-│       ├── logging.py               # structlog configuration
-│       └── request_meta.py          # ContextVar для IP/UA
-├── tests/
-│   ├── conftest.py                  # testcontainers PG, FakeMinioStorage, fixtures
-│   ├── helpers.py                   # USER_ALICE/USER_BOB, make_jwt
-│   ├── test_file_service.py         # 34 интеграционных теста
-│   ├── test_phase2.py               # 15 unit тестов (middleware, rate limiter, health)
-│   └── __init__.py
-├── migrations/
-│   ├── env.py
-│   └── versions/
-│       ├── 0001_initial.py          # pgcrypto, folders, files tables
-│       └── 0002_audit_log.py        # audit_logs table
-├── alembic.ini
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-└── pytest.ini
+src/
+├── main.py                  # Создание FastAPI приложения, подключение middleware, lifespan
+├── config.py                # Все настройки (env-based, pydantic-settings)
+├── exceptions.py            # Иерархия доменных исключений
+├── scheduler.py             # Инициализация APScheduler для фоновых задач
+├── api/
+│   ├── __init__.py          # Агрегация роутеров
+│   ├── files.py             # CRUD файлов + загрузка + скачивание + bulk-операции
+│   ├── folders.py           # CRUD папок
+│   ├── trash.py             # Корзина (список / восстановление / удаление / очистка)
+│   ├── search.py            # Поиск по ресурсам
+│   ├── health.py            # Health check (проверка DB, MinIO, Redis)
+│   ├── internal.py          # Межсервисный эндпоинт (инвалидация кэша квоты)
+│   └── exception_handlers.py
+├── models/
+│   ├── __init__.py          # Engine, фабрика сессий, get_db dependency
+│   ├── file.py              # ORM-модель File
+│   ├── folder.py            # ORM-модель Folder
+│   └── audit_log.py         # ORM-модель AuditLog
+├── schemas/
+│   ├── __init__.py          # Реэкспорт всех схем
+│   ├── file.py              # Request/Response схемы для файлов
+│   ├── folder.py            # Request/Response схемы для папок
+│   ├── common.py            # Общие схемы (ItemResponse, QuotaResponse, Page, DirectoryListingResponse)
+│   ├── bulk.py              # Схемы bulk-операций
+│   ├── trash.py             # Схема элемента корзины
+│   └── search.py            # Схема ответа поиска
+├── services/
+│   ├── file_service.py      # Бизнес-логика файлов
+│   ├── folder_service.py    # Бизнес-логика папок (каскадное удаление/восстановление)
+│   ├── trash_service.py     # Оркестрация корзины
+│   ├── trash_cleanup_service.py # Автоочистка корзины по TTL
+│   ├── search_service.py    # ILIKE-поиск
+│   ├── quota_service.py     # Контроль квоты хранилища (advisory locks)
+│   └── audit_service.py     # Append-only журнал аудита
+├── repositories/
+│   ├── file.py              # SQL-запросы для таблицы files
+│   └── folder.py            # SQL-запросы для таблицы folders
+├── middleware/
+│   ├── request_id.py        # Генерация/передача X-Request-ID
+│   ├── request_meta.py      # Захват Client IP + User-Agent
+│   ├── access_log.py        # Структурированное логирование каждого запроса
+│   └── idempotency.py       # Redis-backed Idempotency-Key для POST /api/files/upload
+└── utils/
+    ├── validators.py        # Санитизация имени файла, валидация расширения/MIME
+    ├── dependencies.py      # JWT-зависимость аутентификации (get_current_user_id)
+    ├── minio_client.py      # Операции MinIO (put, get, move, remove, presigned URLs)
+    ├── rate_limiter.py      # Redis fixed-window rate limiter (FastAPI dependency)
+    ├── logging.py           # Конфигурация structlog
+    ├── cursor.py            # Base64-URL курсорная пагинация
+    ├── conflict.py          # Разрешение конфликтов имени файла (автопереименование)
+    ├── request_meta.py      # ContextVar для IP/User-Agent
+    └── auth_client.py       # HTTP-клиент к Auth Service (получение квоты, кэширование)
 ```
-
----
 
 ## Быстрый старт
 
-### Через Docker Compose (рекомендуется)
+### Docker Compose (рекомендуется)
 
 ```bash
-# Из корня проекта
-docker-compose -f docker-compose.yml up --build
+docker-compose up --build
 ```
 
-Сервис будет доступен на `http://localhost:8002`.
+Сервис будет доступен на внутреннем порту `8000` (проксируется через gateway на `http://localhost:8080/api/files`).
 
 ### Локальная разработка
 
 ```bash
-cd services/file
-
-# 1. Создать виртуальную среду (Python 3.11+)
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # Linux/Mac
-
-# 2. Установить зависимости
 pip install -r requirements.txt
-
-# 3. Запустить миграции
 alembic upgrade head
-
-# 4. Запустить сервис
-set JWT_SECRET=dev-secret           # Windows
-set SERVICE_API_KEY=dev-key
-set DATABASE_URL=postgresql+asyncpg://cloudstorage:cloudstorage_secret@localhost:5432/cloudstorage_file
-set MINIO_ENDPOINT=localhost:9000
-set MINIO_ACCESS_KEY=minioadmin
-set MINIO_SECRET_KEY=minioadmin_secret
-set REDIS_URL=redis://localhost:6379/0
-
-python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Swagger UI
-
-После запуска доступен по адресу: `http://localhost:8000/docs/file`
-
----
-
-## Конфигурация
-
-Все настройки задаются через переменные окружения (или `.env` файл).
+## Переменные окружения
 
 | Переменная | Обязательна | По умолчанию | Описание |
-|-----------|-------------|--------------|----------|
-| `ENV` | нет | `development` | `development` / `production` |
-| `LOG_LEVEL` | нет | `INFO` | Уровень логирования |
-| `DATABASE_URL` | **да** | — | `postgresql+asyncpg://user:pass@host:port/db` |
-| `JWT_SECRET` | **да** | — | Общий HS256 секрет с Auth Service |
-| `JWT_ISSUER` | нет | `auth-service` | Must match Auth Service |
-| `JWT_AUDIENCE` | нет | `cloud-storage` | Must match Auth Service |
-| `MINIO_ENDPOINT` | **да** | — | e.g. `minio:9000` |
-| `MINIO_ACCESS_KEY` | **да** | — | |
-| `MINIO_SECRET_KEY` | **да** | — | |
-| `MINIO_BUCKET` | нет | `cloudstorage` | Имя бакета MinIO |
-| `MINIO_SECURE` | нет | `false` | HTTPS для MinIO |
-| `SERVICE_API_KEY` | **да** | — | Ключ для service-to-service (quota endpoint) |
-| `AUTH_SERVICE_URL` | нет | `http://auth:8000` | URL Auth Service |
-| `REDIS_URL` | нет | `redis://redis:6379/0` | URL Redis |
-| `TRASH_RETENTION_DAYS` | нет | `30` | Дней до hard-delete из trash |
-| `TRASH_CLEANUP_CRON` | нет | `17 3 * * *` | Cron для cleanup job |
-| `TRASH_CLEANUP_ENABLED` | нет | `true` | Включить cleanup job |
-| `MAX_UPLOAD_SIZE` | нет | `104857600` | Лимит загрузки (100 MB) |
-| `ALLOWED_MIME_TYPES` | нет | (см. config.py) | Whitelist MIME через запятую |
-| `ALLOWED_EXTENSIONS` | нет | (см. config.py) | Whitelist расширений через запятую |
-| `DEFAULT_STORAGE_QUOTA` | нет | `5368709120` | Квота по умолчанию (5 GB) |
-| `PREMIUM_STORAGE_QUOTA` | нет | `107374182400` | Premium квота (100 GB) |
+|---|---|---|---|
+| `ENV` | Нет | `development` | `development` / `production` |
+| `DATABASE_URL` | **Да** | — | URL подключения к PostgreSQL |
+| `MINIO_ENDPOINT` | **Да** | — | Адрес MinIO сервера |
+| `MINIO_ACCESS_KEY` | **Да** | — | Access key MinIO |
+| `MINIO_SECRET_KEY` | **Да** | — | Secret key MinIO |
+| `MINIO_BUCKET` | Нет | `cloudstorage` | Имя бакета MinIO |
+| `REDIS_URL` | Нет | `redis://localhost:6379/0` | URL подключения к Redis |
+| `JWT_SECRET` | **Да** | — | Секрет для JWT-токенов |
+| `AUTH_SERVICE_URL` | **Да** | — | URL Auth Service для получения квоты |
+| `SERVICE_API_KEY` | **Да** | — | Ключ для межсервисных вызовов (`X-API-Key`) |
+| `TRASH_CLEANUP_ENABLED` | Нет | `True` | Включить автоочистку корзины |
+| `TRASH_TTL_DAYS` | Нет | `30` | Срок хранения в корзине (дни) |
+| `MAX_FILE_SIZE_MB` | Нет | `100` | Максимальный размер файла (МБ) |
+| `DEFAULT_STORAGE_QUOTA` | Нет | `5368709120` | Квота хранилища по умолчанию (5 ГБ) |
+| `PREMIUM_STORAGE_QUOTA` | Нет | `107374182400` | Квота хранилища для premium (100 ГБ) |
+| `RATE_LIMIT_DEFAULT` | Нет | `300` | Rate limit по умолчанию (запросов/мин) |
+| `RATE_LIMIT_UPLOAD` | Нет | `20` | Rate limit для загрузки (запросов/мин) |
+| `RATE_LIMIT_DELETE` | Нет | `60` | Rate limit для удаления (запросов/мин) |
 
-**Production guard:** в режиме `production` сервис откажется стартовать, если `JWT_SECRET` или `SERVICE_API_KEY` содержат placeholder-значения.
+## API Эндпоинты
 
----
+### Файлы (`/api/files`)
 
-## Аутентификация
+| Метод | Путь | Описание | Rate Limit |
+|---|---|---|---|
+| `GET` | `/api/files/` | Список папок и файлов в директории с независимыми курсорами | default |
+| `POST` | `/api/files/upload` | Загрузка файла (multipart). Параметр `?on_conflict=reject\|rename` | 20/мин |
+| `GET` | `/api/files/quota` | Использование хранилища и квота пользователя | default |
+| `GET` | `/api/files/{file_id}` | Метаданные файла | default |
+| `GET` | `/api/files/{file_id}/text-preview` | UTF-8 превью текстовых файлов (до 256 КБ) | default |
+| `GET` | `/api/files/{file_id}/download` | Потоковое скачивание файла | default |
+| `POST` | `/api/files/bulk-delete` | Мягкое удаление до 200 файлов за раз | 60/мин |
+| `POST` | `/api/files/bulk-move` | Перемещение до 200 файлов в целевую папку | default |
+| `DELETE` | `/api/files/{file_id}` | Мягкое удаление файла (в корзину) | 60/мин |
+| `POST` | `/api/files/{file_id}/restore` | Восстановление файла из корзины | default |
+| `DELETE` | `/api/files/{file_id}/permanent` | Окончательное удаление файла | 60/мин |
+| `POST` | `/api/files/{file_id}/move` | Перемещение файла в другую папку | default |
+| `PATCH` | `/api/files/{file_id}/rename` | Переименование файла | default |
 
-Все эндпоинты кроме `GET /health` требуют заголовок:
-
-```
-Authorization: Bearer <access_token>
-```
-
-JWT валидируется по общему секрету с Auth Service:
-
-| Claim | Требование |
-|-------|-----------|
-| `iss` | `== "auth-service"` |
-| `aud` | `== "cloud-storage"` |
-| `type` | `== "access"` (refresh токены отклоняются) |
-| `sub` | Валидный UUID |
-
-Если токен отсутствует или невалиден, возвращается `401`:
-```json
-{
-  "error": "unauthenticated",
-  "detail": "Missing bearer token"
-}
-```
-
----
-
-## API Reference
-
-### Files
+### Папки (`/api/folders`)
 
 | Метод | Путь | Описание |
-|-------|------|----------|
-| `GET` | `/api/files/` | Список файлов и папок (cursor pagination) |
-| `POST` | `/api/files/upload` | Загрузка файла (multipart/form-data) |
-| `GET` | `/api/files/quota` | Использование хранилища |
-| `GET` | `/api/files/{file_id}` | Метаданные файла |
-| `GET` | `/api/files/{file_id}/text-preview` | Текстовый превью (txt/csv/json) |
-| `GET` | `/api/files/{file_id}/download` | Скачивание файла (streaming) |
-| `POST` | `/api/files/{file_id}/move` | Перемещение в папку |
-| `PATCH` | `/api/files/{file_id}/rename` | Переименование |
-| `DELETE` | `/api/files/{file_id}` | Мягкое удаление (в trash) |
-| `POST` | `/api/files/{file_id}/restore` | Восстановление из trash |
-| `DELETE` | `/api/files/{file_id}/permanent` | Безвозвратное удаление |
-| `POST` | `/api/files/bulk-delete` | Массовое удаление (до 200) |
-| `POST` | `/api/files/bulk-move` | Массовое перемещение (до 200) |
-
-### Folders
-
-| Метод | Путь | Описание |
-|-------|------|----------|
+|---|---|---|
 | `POST` | `/api/folders/` | Создание папки |
-| `GET` | `/api/folders/` | Список папок (offset pagination) |
+| `GET` | `/api/folders/` | Список папок (offset-based) |
 | `GET` | `/api/folders/{folder_id}` | Метаданные папки |
-| `PATCH` | `/api/folders/{folder_id}` | Обновление (name, parent_id) |
-| `DELETE` | `/api/folders/{folder_id}` | Рекурсивное удаление (BFS cascade) |
+| `PATCH` | `/api/folders/{folder_id}` | Обновление имени и/или parent_id |
+| `DELETE` | `/api/folders/{folder_id}` | Мягкое удаление папки (каскадно на все вложенные) |
 
-### Trash
-
-| Метод | Путь | Описание |
-|-------|------|----------|
-| `GET` | `/api/trash/` | Список удалённых items |
-| `POST` | `/api/trash/{item_id}/restore` | Восстановление |
-| `DELETE` | `/api/trash/{item_id}/permanent` | Безвозвратное удаление |
-| `POST` | `/api/trash/empty` | Очистка всего trash |
-
-### Search
+### Корзина (`/api/trash`)
 
 | Метод | Путь | Описание |
-|-------|------|----------|
-| `GET` | `/api/search/?q={query}` | ILIKE поиск по именам файлов/папок |
+|---|---|---|
+| `GET` | `/api/trash/` | Список всех удалённых элементов (файлы + папки) |
+| `POST` | `/api/trash/{item_id}/restore` | Восстановление одного элемента |
+| `DELETE` | `/api/trash/{item_id}/permanent` | Окончательное удаление одного элемента |
+| `POST` | `/api/trash/empty` | Окончательное удаление всей корзины |
 
-### Health
+### Поиск (`/api/search`)
 
 | Метод | Путь | Описание |
-|-------|------|----------|
-| `GET` | `/health` | Проверка DB, MinIO, Redis (200/503) |
+|---|---|---|
+| `GET` | `/api/search/?q=...` | Поиск по именам файлов и папок (регистронезависимый, лимит 1-255 символов) |
 
----
+### Health (`/health`)
 
-### Детали ключевых эндпоинтов
+| Метод | Путь | Описание |
+|---|---|---|
+| `GET` | `/health` | Агрегированный health check (проверка DB, MinIO, Redis). Возвращает 200 или 503 |
 
-#### POST /api/files/upload
+### Internal (`/api/internal`)
 
-Загрузка файла. Принимает `multipart/form-data`.
+| Метод | Путь | Описание | Авторизация |
+|---|---|---|---|
+| `DELETE` | `/api/internal/quota-cache/{user_id}` | Инвалидация кэша квоты пользователя | `X-API-Key` |
 
-**Form fields:**
-| Поле | Тип | Обязательно | Описание |
-|------|-----|-------------|----------|
-| `file` | UploadFile | да | Макс. 100 MB |
-| `folder_id` | UUID | нет | Целевая папка |
+## Модели данных
 
-**Query params:**
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|--------------|----------|
-| `on_conflict` | `reject\|rename` | `reject` | При коллизии имён |
+### File
 
-**Response 201:**
-```json
-{
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "name": "report.pdf",
-  "size": 12345,
-  "mime_type": "application/pdf"
-}
-```
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | UUID | Первичный ключ |
+| `user_id` | UUID | ID владельца (индекс) |
+| `folder_id` | UUID (FK → folders.id) | Родительская папка (nullable, ON DELETE SET NULL) |
+| `name` | String(255) | Имя файла |
+| `size` | BigInteger | Размер в байтах |
+| `mime_type` | String(100) | MIME-тип |
+| `minio_object_id` | String(255) | Ключ объекта в MinIO |
+| `created_at` | DateTime(tz) | Дата создания |
+| `updated_at` | DateTime(tz) | Дата обновления |
+| `deleted_at` | DateTime(tz) | Дата мягкого удаления (nullable) |
+| `deleted_permanently` | Boolean | Флаг окончательного удаления |
 
-**Ошибки:**
-- `409` — конфлик имён (содержит `suggested_name`)
-- `413` — файл превышает лимит
-- `415` — неподдерживаемый тип файла
+### Folder
 
-#### GET /api/files/
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | UUID | Первичный ключ |
+| `user_id` | UUID | ID владельца (индекс) |
+| `parent_id` | UUID (FK → folders.id) | Родительская папка (nullable, ON DELETE CASCADE) |
+| `name` | String(255) | Имя папки |
+| `path` | Text | Путь (nullable) |
+| `created_at` | DateTime(tz) | Дата создания |
+| `updated_at` | DateTime(tz) | Дата обновления |
+| `deleted_at` | DateTime(tz) | Дата мягкого удаления (nullable) |
 
-Список файлов и папок с cursor-based пагинацией.
+### AuditLog
 
-**Query params:**
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|--------------|----------|
-| `folder_id` | UUID | `null` | Папка для списка. `null` = корень |
-| `limit` | int (1-1000) | `200` | Макс. items на коллекцию |
-| `folders_cursor` | string | `null` | Opaque cursor для папок |
-| `files_cursor` | string | `null` | Opaque cursor для файлов |
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | UUID | Первичный ключ |
+| `actor_id` | UUID | ID пользователя (индекс) |
+| `event` | String(64) | Тип события (индекс) |
+| `target_id` | UUID | ID целевого объекта |
+| `target_kind` | String(32) | Тип объекта ("file" / "folder") |
+| `ip` | String(64) | IP-адрес клиента |
+| `user_agent` | String(512) | User-Agent клиента |
+| `extra` | JSONB | Дополнительные данные события |
+| `created_at` | DateTime(tz) | Дата события |
 
-**Response 200:**
-```json
-{
-  "folders": [
-    {
-      "id": "uuid",
-      "kind": "folder",
-      "name": "My Folder",
-      "size": 0,
-      "mime_type": null,
-      "parent_id": "uuid | null",
-      "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z | null"
-    }
-  ],
-  "files": [
-    {
-      "id": "uuid",
-      "kind": "file",
-      "name": "report.pdf",
-      "size": 12345,
-      "mime_type": "application/pdf",
-      "parent_id": "uuid | null",
-      "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z | null"
-    }
-  ],
-  "next_folders_cursor": "base64-string | null",
-  "next_files_cursor": "base64-string | null"
-}
-```
+## Бизнес-логика
 
-#### POST /api/files/bulk-delete
+### Загрузка файла
 
-Массовое мягкое удаление файлов.
+1. Санитизация имени файла (нормализация NFKC, удаление компонентов пути, удаление control-символов, проверка на зарезервированные имена Windows).
+2. Валидация расширения по блок-листу (нет `.exe`, `.bat`, `.ps1`, `.dll` и др.).
+3. Валидация MIME-типа по блок-листу исполняемых MIME-типов.
+4. Проверка размера (по умолчанию максимум 100 МБ).
+5. Проверка владения папкой при указании `folder_id`.
+6. Разрешение конфликтов имени: `on_conflict=reject` → 409 с предложенным именем; `on_conflict=rename` → автопереименование с суффиксом `(1)`, `(2)` и т.д.
+7. Блокировка PostgreSQL advisory lock (`pg_advisory_xact_lock`) на пользователя для сериализации параллельных загрузок и атомарной проверки квоты.
+8. Проверка квоты: сумма размеров активных файлов + размер загружаемого файла vs. квота пользователя (из Auth Service, кэш 60 сек).
+9. Загрузка байтов в MinIO под уникальным ключом (`{user_id}/files/{uuid}.{ext}`).
+10. Вставка записи в БД. При ошибке БД — best-effort очистка объекта MinIO.
+11. Запись события аудита (`file.upload`).
 
-**Request:**
-```json
-{
-  "ids": ["uuid1", "uuid2"]
-}
-```
+### Скачивание файла
 
-**Response 200:**
-```json
-{
-  "succeeded": 2,
-  "failed": 0,
-  "errors": {}
-}
-```
+1. Поиск файла (активный, принадлежащий пользователю).
+2. Потоковая передача объекта MinIO через `StreamingResponse` с заголовками `Content-Disposition` и `Content-Length`.
+3. Поддержка UTF-8 имен файлов (RFC 5987).
 
-Максимум 200 ID за запрос (`MAX_BULK_ITEMS`). Каждый ID обрабатывается независимо — ошибка на одном не прерывает остальные.
+### Мягкое удаление (корзина)
 
----
+1. Перемещение объекта MinIO из префикса `files/` в `trash/` (копирование + удаление).
+2. Установка `deleted_at = now()` на записи файла.
+3. Запись события аудита (`file.soft_delete`).
 
-## Rate Limiting
+### Каскадное удаление папок
 
-Реализован fixed-window rate limiter через Redis.
+1. BFS-обход поддерева папок (корень + все вложенные).
+2. Пометка всех папок в поддереве как `deleted_at = now()`.
+3. Перемещение объектов MinIO активных файлов в `trash/` и пометка записей как удалённых.
+4. Запись событий аудита для корневой папки, каждой вложенной папки и каждого файла.
+5. Защита от бесконечного цикла (максимальная глубина 1000).
 
-| Политика | Лимит | Применяется к |
-|----------|-------|---------------|
-| `POLICY_UPLOAD` | 20 req/60s | `POST /api/files/upload` |
-| `POLICY_DELETE` | 60 req/60s | `DELETE /api/files/{id}`, `DELETE /api/files/{id}/permanent`, `POST /api/files/bulk-delete` |
-| `POLICY_DEFAULT` | 300 req/60s | Все остальные эндпоинты |
+### Восстановление из корзины
 
-**Key:** client IP (через `X-Forwarded-For` / `X-Real-IP` / `request.client.host`)
+1. Сбор всего поддерева удалённых элементов.
+2. Проверка активности исходной родительской папки.
+3. Проверка конфликтов имён в каждом целевом расположении.
+4. Восстановление всех записей папок (`deleted_at = None`).
+5. Перемещение объектов файлов из `trash/` обратно в `files/`.
 
-**Response 429:**
-```json
-{
-  "error": "rate_limit_exceeded",
-  "detail": "Rate limit exceeded",
-  "extra": {
-    "retry_after": 30
-  }
-}
-```
+### Фоновые задачи
 
-При ошибках Redis rate limiter работает в режиме **fail-open** — запросы не блокируются.
+| Задача | Расписание | Описание |
+|---|---|---|
+| Автоочистка корзины по TTL | `17 3 * * *` (ежедневно в 03:17 UTC) | Окончательное удаление файлов и папок, находящихся в корзине более 30 дней. Пакетная обработка по 500 записей. Отключается через `trash_cleanup_enabled=False`. |
 
----
+## Возможности
 
-## Обработка ошибок
-
-Все ошибки возвращаются в формате:
-
-```json
-{
-  "error": "error_code",
-  "detail": "Человекочитаемое описание",
-  "extra": {}
-}
-```
-
-| Error Code | HTTP Status | Описание |
-|------------|-------------|----------|
-| `unauthenticated` | 401 | Токен отсутствует или невалиден |
-| `access_denied` | 403 | Нет прав на ресурс |
-| `file_not_found` | 404 | Файл не найден |
-| `folder_not_found` | 404 | Папка не найдена |
-| `invalid_filename` | 400 | Недопустимое имя файла |
-| `unsupported_file_type` | 415 | Тип файла не в whitelist |
-| `payload_too_large` | 413 | Файл превышает лимит |
-| `quota_exceeded` | 413 | Превышена квота хранилища |
-| `cycle_detected` | 409 | Обнаружен цикл в папках |
-| `file_name_conflict` | 409 | Конфликт имён файлов |
-| `rate_limit_exceeded` | 429 | Превышен лимит запросов |
-| `internal_error` | 500 | Внутренняя ошибка сервера |
-
----
-
-## Object Key Layout (MinIO)
-
-Бакет: `cloudstorage`
-
-```
-{user_id}/files/{uuid}{ext}       # Активные файлы
-{user_id}/trash/{uuid}{ext}       # Удалённые файлы (soft-deleted)
-{user_id}/preview/{uuid}{ext}     # Сгенерированные превью (Preview Service)
-```
-
-**Пример:** `550e8400-e29b-41d4-a716-446655440000/files/a1b2c3d4-e5f6-7890-abcd-ef1234567890.pdf`
-
-При мягком удалении файл перемещается из `files/` в `trash/` (copy + delete). При восстановлении — обратно с новым UUID ключом.
-
----
-
-## Схема БД
-
-### files
-
-```sql
-CREATE TABLE files (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id             UUID NOT NULL,
-    folder_id           UUID REFERENCES folders(id) ON DELETE SET NULL,
-    name                VARCHAR(255) NOT NULL,
-    size                BIGINT NOT NULL,
-    mime_type           VARCHAR(100),
-    minio_object_id     VARCHAR(255) NOT NULL,
-    created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at          TIMESTAMP WITH TIME ZONE,
-    deleted_at          TIMESTAMP WITH TIME ZONE,
-    deleted_permanently BOOLEAN DEFAULT FALSE
-);
-
-CREATE INDEX idx_files_user_id ON files(user_id);
-CREATE INDEX idx_files_folder_id ON files(folder_id);
-CREATE INDEX idx_files_deleted_at ON files(deleted_at);
-```
-
-### folders
-
-```sql
-CREATE TABLE folders (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id     UUID NOT NULL,
-    parent_id   UUID REFERENCES folders(id) ON DELETE CASCADE,
-    name        VARCHAR(255) NOT NULL,
-    path        TEXT,
-    created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at  TIMESTAMP WITH TIME ZONE,
-    deleted_at  TIMESTAMP WITH TIME ZONE
-);
-
-CREATE INDEX idx_folders_user_id ON folders(user_id);
-CREATE INDEX idx_folders_parent_id ON folders(parent_id);
-CREATE INDEX idx_folders_deleted_at ON folders(deleted_at);
-```
-
-### audit_logs
-
-```sql
-CREATE TABLE audit_logs (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    actor_id    UUID NOT NULL,
-    event       VARCHAR(100) NOT NULL,
-    target_id   UUID,
-    target_kind VARCHAR(50),
-    ip          VARCHAR(64),
-    user_agent  VARCHAR(512),
-    extra       JSONB,
-    created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_audit_logs_actor_id ON audit_logs(actor_id);
-CREATE INDEX idx_audit_logs_event ON audit_logs(event);
-CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
-```
-
-**Примечание:** `gen_random_uuid()` требует расширение `pgcrypto`. Инициализируется в `init_db()` и в миграции `0001_initial.py`.
-
----
+- **Полный CRUD** для файлов и папок с контролем владения (мульти-тенантность).
+- **Иерархическая структура папок** с детекцией циклов при перемещении.
+- **Мягкое удаление с корзиной** — все удаления восстанавливаемы; элементы хранятся 30 дней перед автоудалением.
+- **Каскадные операции** — удаление/восстановление папок распространяется на все вложенные элементы.
+- **Потоковая загрузка и скачивание** — файлы не загружаются целиком в память.
+- **Безопасность загрузки** — блокировка исполняемых расширений (50+ паттернов), блокировка MIME-типов, санитизация имён.
+- **Контроль квоты хранилища** — PostgreSQL advisory locks для атомарной проверки квоты при параллельных загрузках.
+- **Курсорная пагинация** — Base64-URL(JSON) курсоры для стабильной, индекс-дружественной навигации.
+- **Bulk-операции** — до 200 файлов за вызов для удаления и перемещения.
+- **Разрешение конфликтов имён** — reject с предложением или автопереименование с суффиксом `(N)`.
+- **Идемпотентность** — Redis-backed `Idempotency-Key` для POST /api/files/upload (кэш на 24 часа).
+- **Rate limiting** — Redis fixed-window: upload (20/мин), delete (60/мин), default (300/мин). Fail-open при ошибках Redis.
+- **Поиск** — регистронезависимый ILIKE-поиск по именам файлов и папок.
+- **Аудит-логирование** — append-only таблица `audit_logs` для всех действий пользователя.
+- **Превью текста** — UTF-8 превью для текстовых/CSV/JSON файлов (до 256 КБ).
+- **Presigned URL** — краткосрочные (15 мин) presigned URL для прямого доступа к MinIO.
+- **Health check** — проверка доступности DB, MinIO и Redis с отображением задержки.
+- **Межсервисная авторизация** — внутренний эндпоинт с `X-API-Key` для инвалидации кэша квоты.
+- **Структурированное логирование** — JSON в production, человекочитаемое в development; request ID传播 через весь запрос.
 
 ## Тестирование
 
-### Запуск тестов
-
 ```bash
-cd services/file
-
-# Все тесты (требуется Docker для testcontainers PostgreSQL)
-pytest -q
-
-# Только конкретный файл
-pytest tests/test_file_service.py -v
-
-# Только конкретный тест
-pytest -k "test_upload_file" -v
-
-# Без Docker (только unit-тесты)
-SKIP_TESTCONTAINERS=1 pytest -q
+pytest
 ```
 
-### Инфраструктура тестов
+Тесты используют `pytest-asyncio` с автоматическим режимом и `testcontainers` для PostgreSQL.
 
-| Компонент | Реализация |
-|-----------|-----------|
-| PostgreSQL | testcontainers `postgres:15-alpine` (session-scoped) |
-| MinIO | In-memory `FakeMinioStorage` (monkeypatch) |
-| Auth | `app.dependency_overrides[get_current_user_id]` |
-| HTTP клиент | `httpx.AsyncClient` + `ASGITransport` |
+## Обработка ошибок
 
-### Тестовые пользователи
+Сервис использует разделение между доменными и HTTP-схемами:
 
-- `USER_ALICE` = `550e8400-e29b-41d4-a716-446655440000`
-- `USER_BOB` = `660e8400-e29b-41d4-a716-446655440001`
+- **Доменные исключения** (`src/exceptions.py`) — иерархия с `DomainError` в корне:
+  - `AuthenticationError` (401)
+  - `AccessDenied` (403)
+  - `FileNotFound` / `FolderNotFound` (404)
+  - `InvalidFileName` (400)
+  - `UnsupportedFileType` (415)
+  - `PayloadTooLarge` / `QuotaExceeded` (413)
+  - `CycleDetected` / `ConflictError` / `FileNameConflict` (409)
+  - `RateLimitExceeded` (429, с `Retry-After`)
 
-### Покрытие
+- **Централизованная обработка** — единая точка регистрации маппинга исключений → JSON-ответ:
+  ```json
+  {"error": "code", "detail": "human message", "extra": {...}}
+  ```
 
-- **34 интеграционных теста** — folder CRUD, file upload/list/meta/move/rename/delete, trash, search, quota, auth, IDOR, upload validation, cycles, soft-delete visibility, quota race, download
-- **15 unit тестов** — RequestID, RequestMeta, rate limiter, idempotency, health check, structlog, AccessLogMiddleware
-
-### Linting
-
-```bash
-ruff check src tests      # Линтер
-ruff format src tests     # Автоформатирование
-ruff format --check src tests  # Проверка без изменений
-```
-
----
-
-## Деплой
-
-### Docker
-
-```bash
-# Сборка образа
-docker build -t file-service .
-
-# Запуск
-docker run -p 8000:8000 \
-  -e DATABASE_URL=postgresql+asyncpg://... \
-  -e JWT_SECRET=... \
-  -e SERVICE_API_KEY=... \
-  -e MINIO_ENDPOINT=minio:9000 \
-  -e MINIO_ACCESS_KEY=... \
-  -e MINIO_SECRET_KEY=... \
-  file-service
-```
-
-### Entrypoint
-
-Dockerfile CMD выполняет:
-1. `alembic upgrade head` — применение миграций
-2. `uvicorn src.main:app --host 0.0.0.0 --port 8000`
-
-### Middleware Stack (порядок)
-
-```
-RequestIDMiddleware        (внешний — генерирует X-Request-ID)
-  └─ RequestMetaMiddleware (захватывает IP + User-Agent)
-      └─ AccessLogMiddleware (логирует каждый запрос)
-          └─ IdempotencyMiddleware (кэширует upload по Idempotency-Key)
-              └─ [Routes]
-```
-
-### Health Check
-
-`GET /health` проверяет доступность всех зависимостей:
-
-```json
-{
-  "status": "healthy",
-  "service": "file",
-  "checks": {
-    "database": { "ok": true, "latency_ms": 1.2 },
-    "minio": { "ok": true, "latency_ms": 3.4 },
-    "redis": { "ok": true, "latency_ms": 0.8 }
-  }
-}
-```
-
-Возвращает `503` при любой нездоровой подсистеме.
-
----
-
-## Конвенции кода
-
-### Архитектурные правила
-
-1. **API НЕ делает прямой `db.execute`** — только через Service → Repository
-2. **Сервисы бросают `DomainError`**, НЕ `HTTPException` — маппинг в `exception_handlers.py`
-3. **MinIO только через `src/utils/minio_client.py`** — не использовать `minio.Minio` напрямую
-4. **Квота:** `reserve_quota(db, user_id, size)` — advisory lock внутри транзакции, вызывать ДО MinIO upload
-5. **JWT:** всегда проверять `type=access` — refresh токены не подходят для data-API
-
-### Валидация
-
-ВСЕГДА перед записью:
-- `sanitize_filename` — NFKC нормализация, strip path, NUL/control-chars, Windows reserved, length cap
-- `validate_extension` — against `settings.blocked_ext_set` (blacklist: exe, bat, cmd, sh, ps1, msi, com, scr, pif, vbs, js, wsf, cpl, hta, inf, reg, rgs, sct, shb, shs)
-- `validate_mime_type` — against `settings.blocked_mime_set` (blacklist: x-msdownload, x-bat, x-cmd, x-sh, x-shellscript, x-executable, x-mach-binary, x-elf)
-
-### Безопасность
-
-- НИКОГДА не возвращать `HTTPException` из сервисов
-- НИКОГДА не использовать `file.read()` без лимита — всегда стримить
-- НИКОГДА не подставлять `user_id` из request body — только из JWT
-- ВСЕГДА проверять `deleted_at IS NULL` в read-запросах
-- ВСЕГДА тестировать cross-tenant (IDOR) сценарии
-- ВСЕГДА проверять `minio_object_id` на принадлежность `user_id` перед операциями
-
-### Именование
-
-- **Сервисы:** `{resource}_service.py` (file_service, folder_service, trash_service)
-- **Репозитории:** `{resource}.py` (file.py, folder.py)
-- **Схемы:** `{resource}.py` (file.py, folder.py, trash.py, search.py, bulk.py)
-- **Эндпоинты:** RESTful + action suffixes (`/{id}/restore`, `/{id}/permanent`)
-
-### Whitelist
-
-**Blocked extensions:** `exe, bat, cmd, sh, ps1, msi, com, scr, pif, vbs, js, wsf, cpl, hta, inf, reg, rgs, sct, shb, shs`
-
-**Blocked MIME types:** `application/x-msdownload, application/x-bat, application/x-cmd, application/x-sh, text/x-shellscript, application/x-executable, application/x-mach-binary, application/x-elf`
-
-**Previewable extensions:** `pdf, png, jpg, jpeg, gif, webp, txt, csv, json`
-
-**Upload policy:** Blacklist — everything allowed except blocked extensions/MIME types.
-
-### Константы
-
-| Название | Значение |
-|----------|---------|
-| `MAX_BULK_ITEMS` | 200 |
-| `max_upload_size` | 100 MB |
-| `stream_chunk_size` | 1 MB |
-| `max_filename_length` | 255 bytes UTF-8 |
-| `presigned_url_expires` | 900 seconds (15 min) |
-| `trash_retention_days` | 30 |
-| `_TEXT_PREVIEW_MAX_BYTES` | 256 KB |
-| `_MAX_ANCESTOR_HOPS` | 1000 (защита от corrupted trees) |
+- **Философия fail-open** — ошибки Redis, MinIO, Auth Service и аудита логируются, но не блокируют основную операцию пользователя.

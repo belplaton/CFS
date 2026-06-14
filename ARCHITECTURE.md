@@ -1,602 +1,422 @@
 # Архитектура Cloud File Storage
 
-Аналог Dropbox/Google Drive на микросервисах
-
----
-
-## 📋 Обзор
+## Обзор
 
 | Параметр | Значение |
 |----------|----------|
-| Команда | 3 разработчика |
 | Архитектура | Микросервисы с раздельными БД |
-| Frontend | React + shadcn/ui + Tailwind CSS |
 | Backend | Python + FastAPI |
+| Frontend | React + shadcn/ui + Tailwind CSS |
 | API Gateway | Caddy |
-| Хранилище файлов | MinIO (единый бакет с префиксами) |
+| Хранилище | MinIO (S3-совместимое) |
 | Базы данных | PostgreSQL (отдельная на сервис) |
-| Кэш/очереди | Redis |
-| Контейнеризация | Docker (один контейнер на сервис) |
-| Развёртывание | Локально через Docker Compose |
+| Кэш | Redis 7 |
+| Контейнеризация | Docker + Docker Compose |
 | Межсервисная коммуникация | REST + API keys |
 
-### Текущий статус реализации (июнь 2026)
+## Высокоуровневая архитектура
 
-- **Готово и используется в UI:** email/password auth, file CRUD, folders, trash (recursive + TTL cleanup), quota (free/premium), search, conflict detection (reject|rename), bulk ops, cursor pagination, browser-native preview (image/PDF via pdfjs-dist), text preview (txt/csv/json/docx/xlsx via preview-service), upload progress widget (queue max 5 concurrent), audit logging, structured logging, rate limiting, health checks.
-- **Готово на backend, но частично не выведено в UI:** email verification flow (backend в dev mode возвращает action_url/token), reset-password flow (backend готов), Google OAuth (не реализован), 2FA/TOTP (не реализован).
-- **Честно не готово:** Google OAuth, TOTP, shared file links, real-time sync, CI pipeline, security/load testing.
-- **Источник истины по текущему состоянию:** `README.md` + `AGENTS.md`. ROADMAP ниже остаётся как исторический план, а не как факт готовности.
+```mermaid
+graph TB
+    subgraph Client[" "]
+        Browser["Браузер"]
+    end
 
----
+    subgraph Gateway["Caddy Gateway :8080"]
+        direction TB
+        Caddy["reverse proxy + CORS + security headers"]
+    end
 
-## 🎯 Функциональность MVP
+    subgraph Backend["Backend Services"]
+        direction TB
+        Auth["Auth Service<br/>FastAPI :8000<br/>JWT, регистрация, квоты"]
+        File["File Service<br/>FastAPI :8000<br/>CRUD файлов/папок, корзина"]
+        Preview["Preview Service<br/>FastAPI :8000<br/>текстовые превью"]
+    end
 
-### Основное
-- ✅ Регистрация / авторизация (email + пароль)
-- ⚠️ Вход через Google (OAuth2) — не реализован
-- ⚠️ Двухфакторная аутентификация (TOTP) — не реализована
-- ✅ Верификация email — backend готов (dev mode: action_url/token), frontend не подключён
-- ✅ Восстановление пароля — backend готов (dev mode: action_url/token), frontend не подключён
-- ✅ Загрузка / скачивание / удаление файлов (чёрный список расширений)
-- ✅ Управление папками (создание, переименование, перемещение, рекурсивное удаление BFS)
-- ✅ Предпросмотр файлов — browser-native для image/PDF (pdfjs-dist), text preview через preview-service
-- ✅ Поиск по имени файла (ILIKE)
-- ✅ Корзина (30 дней TTL, recursive delete, restore, permanent delete)
-- ✅ Квоты: 5 ГБ (бесплатно), 100 ГБ (подписка)
-- ✅ Конфликт имён (reject|rename, duplicate prevention across files AND folders)
-- ✅ Bulk операции (delete/move до 200 файлов, per-id error reporting)
-- ✅ Cursor-based пагинация
-- ✅ Upload progress widget (очередь, max 5 параллельных, отмена, retry)
-- ✅ Audit logging + structured logging (structlog)
-- ✅ Rate limiting (Redis fixed-window, fail-open)
-- ✅ Health check endpoints (DB, MinIO, Redis probes)
+    subgraph Data["Data Layer"]
+        direction TB
+        PG_Auth[("PostgreSQL<br/>auth:5433")]
+        PG_File[("PostgreSQL<br/>file:5434")]
+        PG_Preview[("PostgreSQL<br/>preview:5435")]
+        MinIO[("MinIO<br/>9000 / 9001")]
+        Redis[("Redis<br/>6379")]
+    end
 
-### Отложено (после MVP)
-- ❌ Шаринг файлов по ссылке
-- ❌ Совместный доступ по email
-- ❌ Версионность файлов
-- ❌ Синхронизация в реальном времени (WebSocket)
-- ❌ Управление сессиями/устройствами
-- ❌ CI pipeline, security tests, load testing, OpenAPI examples
+    Browser -->|"HTTP :8080"| Caddy
+    Caddy -->|"/api/auth/*"| Auth
+    Caddy -->|"/api/files/*<br/>/api/folders/*<br/>/api/trash/*<br/>/api/search/*"| File
+    Caddy -->|"/api/preview/*"| Preview
+    Caddy -->|"/*"| Browser
 
----
+    Auth --> PG_Auth
+    Auth --> Redis
+    File --> PG_File
+    File --> MinIO
+    File --> Redis
+    Preview --> PG_Preview
+    Preview -.->|"fetch file bytes"| File
 
-## 🏛️ Микросервисы
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              Caddy Gateway                               │
-│                         (reverse proxy + CORS)                           │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-        ┌───────────────────────────┼───────────────────────────┐
-        │                           │                           │
-        ▼                           ▼                           ▼
-┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│   Auth Service   │    │  File Service    │    │  Preview Service │
-│   (FastAPI)      │◄──►│  (FastAPI)       │◄──►│  (FastAPI)       │
-│                  │    │                  │    │                  │
-│ - Регистрация    │    │ - Загрузка       │    │ - Генерация      │
-│ - Логин          │    │ - Скачивание     │    │   превью         │
-│ - JWT            │    │ - Удаление       │    │ - Изображения    │
-│ - 2FA (TOTP)     │    │ - Папки          │    │ - PDF            │
-│ - OAuth Google   │    │ - Поиск          │    │ - Документы      │
-│ - Email verify   │    │ - Корзина        │    │                  │
-│ - Reset password │    │ - Квоты          │    │                  │
-│ API Key: ✓       │    │ API Key: ✓       │    │ API Key: ✓       │
-└──────────────────┘    └──────────────────┘    └──────────────────┘
-        │                           │                           │
-        ▼                           ▼                           ▼
-┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│  PostgreSQL      │    │  PostgreSQL      │    │  PostgreSQL      │
-│  (auth)          │    │  (file)          │    │  (preview)       │
-│  port: 5433      │    │  port: 5434      │    │  port: 5435      │
-└──────────────────┘    └──────────────────┘    └──────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                            MinIO (S3-compatible)                        │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  Bucket: cloudstorage                                           │   │
-│  │  Prefixes: {user_id}/files/, {user_id}/trash/, {user_id}/preview/ │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                            Redis 7                                      │
-│  - Кэширование превью                                                   │
-│  - Rate limiting для API                                                │
-│  - Сессионное хранилище                                                 │
-└─────────────────────────────────────────────────────────────────────────┘
+    style Client fill:none,stroke:none
+    style Gateway fill:#e8f4fd,stroke:#2196F3
+    style Backend fill:#e8f8e8,stroke:#4CAF50
+    style Data fill:#fff3e0,stroke:#FF9800
 ```
 
-**Межсервисная коммуникация:**
-- REST API с аутентификацией через `X-API-Key` header
-- Каждый сервис имеет свой API key (общий для всех сервисов)
-- Service-to-service запросы идут внутри Docker network
+## Межсервисная коммуникация
 
----
+```mermaid
+graph LR
+    subgraph External["Внешние запросы"]
+        U["Пользователь"]
+    end
 
-## 📁 Структура монорепозитория
+    subgraph GW["Caddy Gateway"]
+        C["Caddy"]
+    end
 
-```
-CloudFileStorage/
-├── docker-compose.yml              # Оркестрация всех сервисов
-├── docker-compose.dev.yml          # Для локальной разработки
-├── .env                            # Переменные окружения
-├── .gitignore
-├── README.md
-├── ARCHITECTURE.md                 # Этот документ
-│
-├── gateway/                        # Caddy Gateway
-│   ├── Caddyfile                   # Конфигурация Caddy
-│   └── docker-compose.yml
-│
-├── services/
-│   │
-│   ├── auth/                       # Auth Service
-│   │   ├── docker-compose.yml
-│   │   ├── Dockerfile
-│   │   ├── requirements.txt
-│   │   ├── pyproject.toml
-│   │   └── src/
-│   │       ├── __init__.py
-│   │       ├── main.py             # Точка входа FastAPI
-│   │       ├── config.py           # Настройки
-│   │       ├── database.py         # Подключение к БД
-│   │       ├── models/             # SQLAlchemy модели
-│   │       │   ├── __init__.py
-│   │       │   ├── user.py
-│   │       │   └── session.py
-│   │       ├── schemas/            # Pydantic схемы
-│   │       │   ├── __init__.py
-│   │       │   ├── auth.py
-│   │       │   └── user.py
-│   │       ├── api/                # API роуты
-│   │       │   ├── __init__.py
-│   │       │   ├── auth.py
-│   │       │   ├── users.py
-│   │       │   └── oauth.py
-│   │       ├── services/           # Бизнес-логика
-│   │       │   ├── __init__.py
-│   │       │   ├── auth.py
-│   │       │   ├── email.py        # Email рассылка
-│   │       │   └── totp.py         # 2FA логика
-│   │       └── utils/
-│   │           ├── __init__.py
-│   │           ├── jwt.py
-│   │           └── security.py
-│   │
-│   ├── file/                       # File Service
-│   │   ├── docker-compose.yml
-│   │   ├── Dockerfile
-│   │   ├── requirements.txt
-│   │   ├── pyproject.toml
-│   │   └── src/
-│   │       ├── __init__.py
-│   │       ├── main.py
-│   │       ├── config.py
-│   │       ├── database.py
-│   │       ├── minio.py            # MinIO клиент
-│   │       ├── models/
-│   │       │   ├── __init__.py
-│   │       │   ├── file.py
-│   │       │   └── folder.py
-│   │       ├── schemas/
-│   │       │   ├── __init__.py
-│   │       │   └── file.py
-│   │       ├── api/
-│   │       │   ├── __init__.py
-│   │       │   ├── files.py
-│   │       │   ├── folders.py
-│   │       │   └── search.py
-│   │       ├── services/
-│   │       │   ├── __init__.py
-│   │       │   ├── file.py
-│   │       │   ├── folder.py
-│   │       │   ├── trash.py        # Корзина
-│   │       │   └── quota.py        # Лимиты
-│   │       └── utils/
-│   │           └── validators.py
-│   │
-│   └── preview/                    # Preview Service
-│       ├── docker-compose.yml
-│       ├── Dockerfile
-│       ├── requirements.txt
-│       ├── pyproject.toml
-│       └── src/
-│           ├── __init__.py
-│           ├── main.py
-│           ├── config.py
-│           ├── minio.py
-│           ├── api/
-│           │   ├── __init__.py
-│           │   └── preview.py
-│           └── services/
-│               ├── __init__.py
-│               ├── image.py        # Превью изображений
-│               ├── pdf.py          # PDF превью
-│               └── document.py     # Документы (docx, xlsx)
-│
-├── frontend/                       # React приложение
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   ├── .env
-│   └── src/
-│       ├── main.jsx
-│       ├── App.jsx
-│       ├── api/                    # API клиенты
-│       ├── components/             # UI компоненты
-│       ├── pages/                  # Страницы
-│       ├── hooks/                  # Кастомные хуки
-│       ├── store/                  # State management (Zustand/Redux)
-│       └── utils/
-│
-└── tests/                          # Общие тесты
-    ├── conftest.py
-    ├── test_auth/
-    ├── test_file/
-    └── test_e2e/
+    A["Auth Service"]
+    F["File Service"]
+    P["Preview Service"]
+    R["Redis"]
+    M["MinIO"]
+    DB_A[("Auth DB")]
+    DB_F[("File DB")]
+
+    U -->|"1. login<br/>POST /api/auth/login"| C
+    C --> A
+    A -->|"2. validate<br/>credentials"| DB_A
+    A -->|"3. rate limit<br/>check"| R
+    A -->|"4. return<br/>JWT"| C
+    C --> U
+
+    U -->|"5. upload file<br/>POST /api/files/upload<br/>Authorization: Bearer JWT"| C
+    C --> F
+    F -->|"6. validate JWT<br/>(shared secret)"| A
+    F -->|"7. check quota<br/>GET /users/{id}/quota<br/>X-API-Key"| A
+    F -->|"8. write object"| M
+    F -->|"9. insert record"| DB_F
+    F -->|"10. audit log"| DB_F
+    C --> U
+
+    U -->|"11. preview<br/>GET /api/preview/{id}<br/>Authorization: Bearer JWT"| C
+    C --> P
+    P -->|"12. fetch file bytes<br/>GET /api/files/{id}/download<br/>X-API-Key"| F
+    P -->|"13. extract text"| P
+    C --> U
+
+    style External fill:none,stroke:none
+    style GW fill:#e8f4fd,stroke:#2196F3
 ```
 
----
+## Поток загрузки файла
 
-## 🔧 Технологический стек
+```mermaid
+sequenceDiagram
+    actor User as Пользователь
+    participant GW as Caddy Gateway
+    participant Auth as Auth Service
+    participant File as File Service
+    participant Redis as Redis
+    participant MinIO as MinIO
+    participant DB as File DB
 
-### Backend (все сервисы)
+    User->>GW: POST /api/files/upload<br/>Authorization: Bearer JWT
+    GW->>File: forward request
+
+    File->>File: 1. decode JWT (shared secret)
+    File->>File: 2. sanitize filename (NFKC, block list)
+    File->>File: 3. validate extension + MIME
+    File->>File: 4. check file size (max 100 MB)
+
+    alt on_conflict=rename
+        File->>File: 5. auto-rename: report.pdf -> report (1).pdf
+    end
+
+    File->>Redis: 6. check idempotency key
+    Redis-->>File: not found (new upload)
+
+    File->>DB: 7. pg_advisory_xact_lock(user_id)
+    File->>Auth: 8. GET /users/{user_id}/quota<br/>X-API-Key
+    Auth-->>File: {used: 1.2 GB, quota: 5 GB}
+    File->>File: 9. check: used + file_size <= quota
+
+    File->>MinIO: 10. put_bytes({user_id}/files/{uuid}.ext)
+    MinIO-->>File: ok
+
+    File->>DB: 11. INSERT INTO files
+    DB-->>File: ok
+
+    File->>DB: 12. INSERT INTO audit_logs (file.upload)
+    File->>Redis: 13. store idempotency key (24h TTL)
+
+    File-->>GW: 201 {id, name, size, ...}
+    GW-->>User: 201 Created
+```
+
+## Поток скачивания файла
+
+```mermaid
+sequenceDiagram
+    actor User as Пользователь
+    participant GW as Caddy Gateway
+    participant File as File Service
+    participant DB as File DB
+    participant MinIO as MinIO
+
+    User->>GW: GET /api/files/{id}/download
+    GW->>File: forward request
+
+    File->>File: 1. decode JWT
+    File->>DB: 2. SELECT from files WHERE id and user_id match
+    DB-->>File: minio_object_id
+
+    File->>MinIO: 3. get_stream(minio_object_id)
+    MinIO-->>File: byte stream
+
+    File-->>GW: 200 StreamingResponse with Content-Disposition
+    GW-->>User: file bytes
+```
+
+## Поток корзины (soft delete + TTL cleanup)
+
+```mermaid
+sequenceDiagram
+    actor User as Пользователь
+    participant File as File Service
+    participant MinIO as MinIO
+    participant DB as File DB
+    participant Scheduler as APScheduler
+
+    Note over User,Scheduler: Soft Delete
+    User->>File: DELETE /api/files/{id}
+    File->>MinIO: move files/{uuid}.ext -> trash/{uuid}.ext
+    File->>DB: UPDATE files SET deleted_at=now()
+    File->>DB: INSERT audit_logs (file.soft_delete)
+    File-->>User: 200 {status: "moved_to_trash"}
+
+    Note over User,Scheduler: Restore
+    User->>File: POST /api/trash/{id}/restore
+    File->>DB: check parent folder is active
+    File->>DB: check name conflicts
+    File->>DB: UPDATE files SET deleted_at=NULL
+    File->>MinIO: move trash/{uuid}.ext -> files/{uuid}.ext
+    File-->>User: 200 {status: "restored"}
+
+    Note over User,Scheduler: TTL Cleanup (daily 03:17 UTC)
+    Scheduler->>DB: SELECT * FROM files<br/>WHERE deleted_at < now() - 30 days<br/>LIMIT 500
+    loop batch (500 rows)
+        Scheduler->>MinIO: remove(trash/{uuid}.ext)
+        Scheduler->>DB: DELETE FROM files
+        Scheduler->>DB: INSERT audit_logs (file.ttl_purge)
+    end
+```
+
+## Схема базы данных
+
+### Auth Service
+
+```mermaid
+erDiagram
+    users {
+        uuid id PK
+        varchar email UK
+        varchar hashed_password
+        boolean is_active
+        boolean is_verified
+        timestamp created_at
+        timestamp updated_at
+        bigint storage_quota
+        varchar subscription
+        varchar totp_secret
+        varchar google_id UK
+    }
+
+    verification_tokens {
+        uuid id PK
+        uuid user_id FK
+        varchar token UK
+        varchar token_type
+        timestamp expires_at
+        timestamp created_at
+    }
+
+    users ||--o{ verification_tokens : "has tokens"
+```
+
+### File Service
+
+```mermaid
+erDiagram
+    folders {
+        uuid id PK
+        uuid user_id
+        uuid parent_id FK
+        varchar name
+        text path
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at
+    }
+
+    files {
+        uuid id PK
+        uuid user_id
+        uuid folder_id FK
+        varchar name
+        bigint size
+        varchar mime_type
+        varchar minio_object_id
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at
+        boolean deleted_permanently
+    }
+
+    audit_logs {
+        uuid id PK
+        uuid actor_id
+        varchar event
+        uuid target_id
+        varchar target_kind
+        varchar ip
+        varchar user_agent
+        jsonb extra
+        timestamp created_at
+    }
+
+    folders ||--o{ folders : "parent"
+    folders ||--o{ files : "contains"
+    files ||--o{ audit_logs : "audited"
+```
+
+### Preview Service
+
+Preview Service не имеет собственной БД в runtime. Используется только `preview_cache` при необходимости кэширования (реализация в планах).
+
+## MinIO: структура бакета
+
+```mermaid
+graph TB
+    subgraph Bucket["cloudstorage bucket"]
+        direction TB
+        subgraph U1["user_001/"]
+            F1["files/uuid1.pdf"]
+            F2["files/uuid2.txt"]
+            T1["trash/uuid3.jpg"]
+        end
+        subgraph U2["user_002/"]
+            F3["files/uuid4.docx"]
+            F4["files/uuid5.png"]
+        end
+    end
+
+    style Bucket fill:#fff3e0,stroke:#FF9800
+```
+
+| Префикс | Назначение | Операции |
+|---------|-----------|----------|
+| `{user_id}/files/` | Активные файлы | put, get, move, remove |
+| `{user_id}/trash/` | Удалённые файлы (30 дней) | get, remove |
+
+## Технологический стек
+
+### Backend
+
 | Компонент | Технология |
 |-----------|------------|
-| Фреймворк | FastAPI |
-| Валидация | Pydantic v2 |
+| Фреймворк | FastAPI (async) |
 | ORM | SQLAlchemy 2.0 + asyncpg |
-| Миграции БД | Alembic |
-| JWT | python-jose или PyJWT |
-| OAuth | authlib |
-| 2FA | pyotp |
-| Email | aiosmtplib + Jinja2 (шаблоны) |
-| Тесты | pytest + httpx |
+| Миграции | Alembic |
+| Валидация | Pydantic v2 |
+| JWT | python-jose (HS256) |
+| Email | aiosmtplib + Jinja2 |
+| Логирование | structlog |
 | MinIO SDK | minio |
+| Тесты | pytest + httpx + testcontainers |
 
 ### Frontend
+
 | Компонент | Технология |
 |-----------|------------|
 | Фреймворк | React 18 + Vite |
-| UI библиотека | shadcn/ui (Radix UI + Tailwind CSS) |
-| State management | Zustand (легче Redux) |
-| HTTP клиент | Axios или TanStack Query |
+| UI | shadcn/ui (Radix UI + Tailwind CSS) |
+| State | Zustand |
 | Роутинг | React Router v6 |
-| Формы | React Hook Form + Zod |
-| Тесты | Vitest + React Testing Library |
-
-### Frontend Design Rules
-- Frontend использует визуальный язык **shadcn/ui** с ориентацией на референс `ui.shadcn.com`
-- Базовый стиль проекта: **`new-york`**
-- Базовая палитра: **`neutral`**
-- Темизация строится на semantic CSS variables (`background`, `foreground`, `card`, `muted`, `primary` и т.д.)
-- Новые страницы и компоненты должны визуально продолжать существующие shadcn patterns: спокойные surfaces, читаемые card layers, заметные borders, умеренные shadows, простая типографика
-- Каждый экран должен иметь явную визуальную иерархию: primary working area, secondary context, вспомогательные actions и предсказуемые interaction states
-- Основной критерий качества интерфейса: пользователь за 2-3 секунды понимает, где находится главный фокус и какое действие доступно первым
-- Недопустима смесь нескольких визуальных систем внутри одного рабочего сценария; frontend должен оставаться целостным shadcn/ui-first интерфейсом
-- Theme layer фронтенда поддерживает режимы `light`, `dark`, `midnight` и `system`; смена темы не должна менять layout-паттерны, только токены и атмосферу интерфейса
-- Источник конфигурации для фронтенда: `frontend/components.json`
+| HTTP | Axios |
 
 ### Инфраструктура
+
 | Компонент | Технология |
 |-----------|------------|
-| Gateway | Caddy (автоматический HTTPS) |
-| БД | PostgreSQL 15+ |
+| Gateway | Caddy 2 |
+| БД | PostgreSQL 15 |
 | Хранилище | MinIO |
-| Кэш/очереди | Redis 7 (опционально для MVP) |
-| Email (dev) | Mailtrap (100 писем/мес бесплатно) |
+| Кэш | Redis 7 |
 | Контейнеры | Docker + Docker Compose |
 
----
+## Безопасность
 
-## 🗄️ Схема базы данных
+### Аутентификация
 
-### Auth Service (postgresql://postgres-auth:5432/cloudstorage_auth)
+```mermaid
+sequenceDiagram
+    participant C as Клиент
+    participant A as Auth Service
+    participant F as File Service
 
-#### Таблица `users`
-```sql
-CREATE TABLE users (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           VARCHAR(255) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    is_active       BOOLEAN DEFAULT TRUE,
-    is_verified     BOOLEAN DEFAULT FALSE,
-    created_at      TIMESTAMP DEFAULT NOW(),
-    updated_at      TIMESTAMP,
-    storage_quota   BIGINT DEFAULT 5368709120,
-    subscription    VARCHAR(50) DEFAULT 'free',
-    totp_secret     VARCHAR(255),
-    google_id       VARCHAR(255) UNIQUE
-);
+    C->>A: POST /api/auth/login<br/>{email, password}
+    A->>A: bcrypt verify
+    A-->>C: {access_token, refresh_token}
 
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_google_id ON users(google_id);
-CREATE INDEX idx_users_created_at ON users(created_at);
+    C->>F: GET /api/files/<br/>Authorization: Bearer access_token
+    F->>F: decode JWT (shared JWT_SECRET)<br/>verify iss=auth-service, aud=cloud-storage
+    F-->>C: 200 OK
 ```
 
-#### Таблица `verification_tokens`
-```sql
-CREATE TABLE verification_tokens (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
-    token           VARCHAR(255) UNIQUE NOT NULL,
-    token_type      VARCHAR(50),
-    expires_at      TIMESTAMP NOT NULL,
-    created_at      TIMESTAMP DEFAULT NOW()
-);
+| Механизм | Реализация |
+|----------|-----------|
+| User auth | JWT access + refresh токены (HS256) |
+| Service-to-service | `X-API-Key` header (общий `SERVICE_API_KEY`) |
+| Passwords | bcrypt (passlib) |
+| Rate limiting | Redis fixed-window (fail-open) |
+| CORS | конкретный origin, не `*` |
+| Security headers | X-Content-Type-Options, X-Frame-Options, CSP, Referrer-Policy |
 
-CREATE INDEX idx_verification_tokens_user_id ON verification_tokens(user_id);
-CREATE INDEX idx_verification_tokens_token ON verification_tokens(token);
-CREATE INDEX idx_verification_tokens_expires_at ON verification_tokens(expires_at);
-```
+### Rate Limiting
 
-#### Таблица `sessions` (опционально)
-```sql
-CREATE TABLE sessions (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
-    refresh_token   VARCHAR(255) UNIQUE NOT NULL,
-    expires_at      TIMESTAMP NOT NULL,
-    created_at      TIMESTAMP DEFAULT NOW()
-);
+| Endpoint | Лимит |
+|----------|-------|
+| Login | 10 req/min на IP |
+| Register | 5 req/min на IP |
+| Password reset | 3 req/min на IP |
+| File upload | 20 req/min на пользователя |
+| File delete | 60 req/min на пользователя |
+| По умолчанию | 300 req/min на пользователя |
 
-CREATE INDEX idx_sessions_user_id ON sessions(user_id);
-CREATE INDEX idx_sessions_refresh_token ON sessions(refresh_token);
-```
+При ошибках Redis — fail-open (запрос проходит).
 
----
+### Квоты
 
-### File Service (postgresql://postgres-file:5432/cloudstorage_file)
+| Тариф | Квота |
+|-------|-------|
+| free | 5 ГБ |
+| pro | 100 ГБ |
+| team | 500 ГБ |
 
-#### Таблица `folders`
-```sql
-CREATE TABLE folders (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID NOT NULL,
-    parent_id       UUID REFERENCES folders(id) ON DELETE CASCADE,
-    name            VARCHAR(255) NOT NULL,
-    path            TEXT,
-    created_at      TIMESTAMP DEFAULT NOW(),
-    updated_at      TIMESTAMP,
-    deleted_at      TIMESTAMP
-);
+Проверка квоты через `pg_advisory_xact_lock` для атомарности при параллельных загрузках.
 
-CREATE INDEX idx_folders_user_id ON folders(user_id);
-CREATE INDEX idx_folders_parent_id ON folders(parent_id);
-CREATE INDEX idx_folders_deleted_at ON folders(deleted_at);
-CREATE INDEX idx_folders_user_parent ON folders(user_id, parent_id);
-```
+## Переменные окружения
 
-#### Таблица `files`
-```sql
-CREATE TABLE files (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id             UUID NOT NULL,
-    folder_id           UUID REFERENCES folders(id) ON DELETE SET NULL,
-    name                VARCHAR(255) NOT NULL,
-    size                BIGINT NOT NULL,
-    mime_type           VARCHAR(100),
-    minio_object_id     VARCHAR(255) NOT NULL,
-    created_at          TIMESTAMP DEFAULT NOW(),
-    updated_at          TIMESTAMP,
-    deleted_at          TIMESTAMP,
-    deleted_permanently BOOLEAN DEFAULT FALSE
-);
-
-CREATE INDEX idx_files_user_id ON files(user_id);
-CREATE INDEX idx_files_folder_id ON files(folder_id);
-CREATE INDEX idx_files_deleted_at ON files(deleted_at);
-CREATE INDEX idx_files_user_folder ON files(user_id, folder_id);
-CREATE INDEX idx_files_name ON files(name);
-```
-
-#### Таблица `audit_logs` (опционально)
-```sql
-CREATE TABLE audit_logs (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID,
-    action          VARCHAR(50),
-    resource_type   VARCHAR(50),
-    resource_id     UUID,
-    ip_address      INET,
-    user_agent      TEXT,
-    created_at      TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
-CREATE INDEX idx_audit_logs_action ON audit_logs(action);
-CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
-```
-
----
-
-### Preview Service (postgresql://postgres-preview:5432/cloudstorage_preview)
-
-#### Таблица `preview_cache`
-```sql
-CREATE TABLE preview_cache (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    file_id         UUID NOT NULL,
-    preview_type    VARCHAR(50),
-    minio_object_id VARCHAR(255),
-    expires_at      TIMESTAMP NOT NULL,
-    created_at      TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_preview_cache_file_id ON preview_cache(file_id);
-CREATE INDEX idx_preview_cache_expires_at ON preview_cache(expires_at);
-```
-
----
-
-## 🌐 API Gateway (Caddy)
-
-### Маршрутизация
-
-| Домен/Путь | Сервис |
-|------------|--------|
-| `api/auth/*` | Auth Service |
-| `api/files/*` | File Service |
-| `api/preview/*` | Preview Service |
-| `/` | Frontend (React) |
-
-### CORS настройки
-- `Access-Control-Allow-Origin`: `http://localhost:8080`
-- `Access-Control-Allow-Credentials`: `true`
-- `Access-Control-Allow-Headers`: `Content-Type, Authorization, X-Requested-With, X-API-Key`
-
----
-
-## 📦 Docker Compose
-
-### Основные сервисы
-
-| Сервис | Порт | Описание |
-|--------|------|----------|
-| `gateway` | 8080 | Caddy reverse proxy |
-| `postgres-auth` | 5433 | БД Auth Service |
-| `postgres-file` | 5434 | БД File Service |
-| `postgres-preview` | 5435 | БД Preview Service |
-| `minio` | 9000, 9001 | Хранилище файлов |
-| `redis` | 6379 | Кэш и rate limiting |
-| `auth` | 8000 | Auth Service (внутренний) |
-| `file` | 8000 | File Service (внутренний) |
-| `preview` | 8000 | Preview Service (внутренний) |
-
-### Переменные окружения
-
-| Переменная | Сервис | Описание |
-|------------|--------|----------|
-| `SERVICE_API_KEY` | Все | Ключ для межсервисной коммуникации |
-| `DATABASE_URL` | Каждый | URL своей БД |
-| `REDIS_URL` | File, Preview | Подключение к Redis |
-| `MINIO_BUCKET` | File, Preview | Имя бакета MinIO |
-
----
-
-## 👥 Распределение задач для 3 разработчиков
-
-### Разработчик 1: Auth Service + Frontend Auth UI
-- [ ] Auth Service (FastAPI)
-- [ ] Регистрация / логин / JWT
-- [ ] OAuth Google
-- [ ] 2FA (TOTP)
-- [ ] Email верификация / восстановление пароля
-- [ ] Frontend: страницы входа, регистрации, личного кабинета
-
-### Разработчик 2: File Service + Frontend File UI
-- [ ] File Service (FastAPI)
-- [ ] Загрузка / скачивание / удаление
-- [ ] Управление папками
-- [ ] Поиск по файлам
-- [ ] Корзина
-- [ ] Квоты
-- [ ] Frontend: файловый менеджер, загрузка, превью
-
-### Разработчик 3: Preview Service + Инфраструктура
-- [ ] Preview Service (FastAPI)
-- [ ] Генерация превью (изображения, PDF, документы)
-- [ ] Docker Compose оркестрация
-- [ ] Caddy настройка
-- [ ] MinIO настройка
-- [ ] Email интеграция (Mailtrap)
-- [ ] Frontend: компонент предпросмотра
-
----
-
-## 🚀 План разработки (спринты)
-
-### Спринт 1 (1-2 недели): Базовая инфраструктура
-- [ ] Настроить монорепозиторий
-- [ ] Docker Compose со всеми сервисами
-- [ ] PostgreSQL + MinIO + Caddy
-- [ ] Базовый Auth Service (регистрация, логин, JWT)
-- [ ] Базовый Frontend (форма входа)
-
-### Спринт 2 (2-3 недели): Файловый сервис
-- [ ] File Service (загрузка, скачивание, удаление)
-- [ ] Управление папками
-- [ ] Frontend: файловый менеджер
-- [ ] Интеграция с MinIO
-
-### Спринт 3 (1-2 недели): Дополнительные функции
-- [ ] Поиск по файлам
-- [ ] Корзина (30 дней)
-- [ ] Квоты (5 ГБ / 100 ГБ)
-- [ ] Preview Service (изображения)
-
-### Спринт 4 (1-2 недели): Улучшения
-- [ ] OAuth Google
-- [ ] 2FA (TOTP)
-- [ ] Email верификация / восстановление пароля
-- [ ] Предпросмотр документов и PDF
-- [ ] Полировка UI/UX
-
-### Спринт 5 (1 неделя): Тестирование и релиз MVP
-- [ ] Интеграционное тестирование
-- [ ] Исправление багов
-- [ ] Документация
-- [ ] Демо
-
-**Итого:** 6-10 недель для MVP
-
----
-
-## 📝 Следующие шаги
-
-1. **Инициализировать репозиторий**
-   ```bash
-   git init
-   mkdir -p services/{auth,file,preview} gateway frontend tests
-   ```
-
-2. **Создать базовый Docker Compose**
-
-3. **Настроить Auth Service** (первый приоритет)
-
-4. **Создать базовый Frontend** с формой входа
-
----
-
-## 🔒 Безопасность
-
-### Межсервисная аутентификация
-- Все сервисы используют общий `SERVICE_API_KEY` для аутентификации
-- API key передаётся в заголовке `X-API-Key`
-- Сервисы доверяют запросам с валидным API key
-
-### CORS
-- Настроен на разрешённые_origin (не `*`)
-- `Access-Control-Allow-Credentials: true` требует конкретный origin
-
-### Rate Limiting (планируется)
-- Redis-based rate limiting для auth endpoints
-- Защита от brute force атак
-
----
-
-## ❓ Открытые вопросы
-
-- [ ] Нужна ли админка для управления пользователями (изменение квот)?
-- [ ] Какой сервис для email выбрать для продакшена (SendGrid / Resend)?
-- [ ] Использовать ли WebSocket для real-time обновлений?
-
----
-
-**Документ создан:** 31 марта 2026  
-**Версия:** 2.0 (обновлена архитектура с раздельными БД)
-
-### Изменения в версии 2.0:
-- ✅ Разделены базы данных для каждого сервиса
-- ✅ Добавлен Redis для кэширования и rate limiting
-- ✅ Изменена стратегия MinIO: единый бакет с префиксами
-- ✅ Добавлена межсервисная аутентификация (API keys)
-- ✅ Исправлены CORS настройки
-- ✅ Добавлены индексы для всех таблиц
-- ✅ Убрана MinIO Console из публичного доступа
+| Переменная | Сервис | Обязательна | Описание |
+|------------|--------|-------------|----------|
+| `JWT_SECRET` | Auth, File | Да | HMAC-секрет для JWT |
+| `SERVICE_API_KEY` | Все | Да | Ключ межсервисной коммуникации |
+| `REDIS_PASSWORD` | Auth, File | Да | Пароль Redis |
+| `POSTGRES_PASSWORD` | Все | Да | Пароль PostgreSQL |
+| `MINIO_ROOT_USER` | File | Да | Пользователь MinIO |
+| `MINIO_ROOT_PASSWORD` | File | Да | Пароль MinIO |
+| `DATABASE_URL` | Каждый | Да | URL подключения к БД сервиса |
+| `REDIS_URL` | Auth, File | Нет | URL Redis (fail-open если не задан) |
+| `SMTP_HOST` | Auth | Нет | SMTP сервер для email |
+| `MINIO_BUCKET` | File | Нет | Имя бакета (по умолчанию `cloudstorage`) |
