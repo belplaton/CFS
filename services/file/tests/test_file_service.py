@@ -138,6 +138,30 @@ async def test_list_files(async_client):
 
 
 @pytest.mark.asyncio
+async def test_folder_listing_returns_recursive_folder_size(async_client):
+    parent = await async_client.post("/api/folders/", json={"name": "Parent"})
+    parent_id = parent.json()["id"]
+
+    child = await async_client.post(
+        "/api/folders/",
+        json={"name": "Child", "parent_id": parent_id},
+    )
+    child_id = child.json()["id"]
+
+    await async_client.post(
+        "/api/files/upload",
+        params={"folder_id": child_id},
+        files={"file": ("nested.txt", b"hello world", "text/plain")},
+    )
+
+    listing = await async_client.get("/api/files/")
+    assert listing.status_code == 200
+
+    folder = next(item for item in listing.json()["folders"] if item["id"] == parent_id)
+    assert folder["size"] == 11
+
+
+@pytest.mark.asyncio
 async def test_get_file_meta(async_client):
     resp = await async_client.post(
         "/api/files/upload",

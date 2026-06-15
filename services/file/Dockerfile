@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 RUN groupadd -r app && useradd -r -g app -d /app -s /sbin/nologin app
 

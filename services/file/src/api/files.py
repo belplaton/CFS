@@ -118,6 +118,10 @@ async def list_files(
     files, files_next = await file_svc.list_files_page(
         user_id, folder_id, limit=limit, cursor=parsed_files_cursor
     )
+    folder_sizes = await folder_svc.get_recursive_sizes(
+        user_id,
+        [folder.id for folder in folders],
+    )
 
     folder_items: list[ItemResponse] = []
     for f in folders:
@@ -126,6 +130,7 @@ async def list_files(
                 id=f.id,
                 kind="folder",
                 name=f.name,
+                size=folder_sizes.get(f.id, 0),
                 parent_id=f.parent_id,
                 created_at=f.created_at,
                 updated_at=f.updated_at,

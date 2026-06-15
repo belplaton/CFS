@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Optional, Sequence
 from uuid import UUID
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import and_, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.folder import Folder
@@ -233,6 +233,66 @@ class FolderRepository:
             .limit(limit)
         )
         return result.scalars().all()
+
+    @staticmethod
+    async def get_recursive_sizes(
+        db: AsyncSession,
+        user_id: UUID,
+        folder_ids: list[UUID],
+    ) -> dict[UUID, int]:
+        """
+        Return recursive byte sizes for the provided active folders.
+
+        Each folder's size is the sum of all active descendant file sizes,
+        including files directly inside the folder itself.
+        """
+        from src.models.file import File
+
+        if not folder_ids:
+            return {}
+
+        seed = (
+            select(
+                Folder.id.label("root_id"),
+                Folder.id.label("folder_id"),
+            )
+            .where(
+                Folder.user_id == user_id,
+                Folder.id.in_(folder_ids),
+                Folder.deleted_at.is_(None),
+            )
+            .cte(name="folder_subtree", recursive=True)
+        )
+
+        descendants = select(
+            seed.c.root_id,
+            Folder.id.label("folder_id"),
+        ).join(Folder, Folder.parent_id == seed.c.folder_id).where(
+            Folder.user_id == user_id,
+            Folder.deleted_at.is_(None),
+        )
+
+        subtree = seed.union_all(descendants)
+
+        result = await db.execute(
+            select(
+                subtree.c.root_id,
+                func.coalesce(func.sum(File.size), 0).label("total_size"),
+            )
+            .select_from(
+                subtree.outerjoin(
+                    File,
+                    and_(
+                        File.folder_id == subtree.c.folder_id,
+                        File.user_id == user_id,
+                        File.deleted_at.is_(None),
+                    ),
+                )
+            )
+            .group_by(subtree.c.root_id)
+        )
+
+        return {row.root_id: int(row.total_size or 0) for row in result}
 
     @staticmethod
     async def list_existing_names_in_parent(

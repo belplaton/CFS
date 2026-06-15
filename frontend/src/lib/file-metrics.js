@@ -73,7 +73,7 @@ export function getItemEffectiveSize(item, folderSizeCache) {
     return item.size ?? 0
   }
 
-  return folderSizeCache.get(item.id) ?? 0
+  return folderSizeCache.get(item.id) ?? item.size ?? 0
 }
 
 export function matchesTypeFilter(item, typeFilter) {

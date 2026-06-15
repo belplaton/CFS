@@ -87,6 +87,13 @@ class FolderService:
             next_cursor = Cursor(name=last.name, id=last.id).encode()
         return rows, next_cursor
 
+    async def get_recursive_sizes(
+        self,
+        user_id: UUID,
+        folder_ids: list[UUID],
+    ) -> dict[UUID, int]:
+        return await FolderRepository.get_recursive_sizes(self.db, user_id, folder_ids)
+
     # ==================== Create / rename / move / delete ====================
 
     async def create_folder(

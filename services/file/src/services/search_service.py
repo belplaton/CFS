@@ -29,6 +29,11 @@ class SearchService:
         folders = await FolderRepository.search_by_name(
             self.db, user_id, pattern, limit
         )
+        folder_sizes = await FolderRepository.get_recursive_sizes(
+            self.db,
+            user_id,
+            [folder.id for folder in folders],
+        )
 
         results: list[ItemResponse] = []
         for f in folders:
@@ -37,6 +42,7 @@ class SearchService:
                     id=f.id,
                     kind="folder",
                     name=f.name,
+                    size=folder_sizes.get(f.id, 0),
                     parent_id=f.parent_id,
                     created_at=f.created_at,
                     updated_at=f.updated_at,
